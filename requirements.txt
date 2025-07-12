@@ -5,6 +5,7 @@ pillow
 torch 
 torchvision
 ultralytics
+torch
 git+https://github.com/facebookresearch/detectron2.git
 transformers
 timm
