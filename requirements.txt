@@ -10,3 +10,4 @@ transformers
 timm
 scikit-learn
 pandas
+xgboost
