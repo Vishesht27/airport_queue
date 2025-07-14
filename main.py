@@ -72,16 +72,7 @@ try:
 except ImportError:
     ULTRALYTICS_AVAILABLE = False
 
-try:
-    import detectron2
-    from detectron2.engine import DefaultPredictor
-    from detectron2.config import get_cfg
-    from detectron2.utils.visualizer import Visualizer
-    from detectron2.data import MetadataCatalog
-    from detectron2.model_zoo import model_zoo
-    DETECTRON2_AVAILABLE = True
-except ImportError:
-    DETECTRON2_AVAILABLE = False
+
 
 try:
     import transformers
@@ -168,12 +159,6 @@ class ModelManager:
                 'description': 'Real-time Detection Transformer - Superior crowd detection',
                 'requirements': ['ultralytics']
             },
-            'Detectron2': {
-                'file': 'mask_rcnn_R_50_FPN_3x',
-                'type': 'detectron2',
-                'description': 'Facebook Research - Professional grade with segmentation',
-                'requirements': ['detectron2']
-            },
             'DETR': {
                 'file': 'facebook/detr-resnet-50',
                 'type': 'detr',
@@ -188,9 +173,6 @@ class ModelManager:
         
         if ULTRALYTICS_AVAILABLE:
             available.extend(['YOLOv8m', 'YOLOv8x', 'YOLOv9e', 'YOLOv10x', 'RT-DETR-X'])
-        
-        if DETECTRON2_AVAILABLE:
-            available.append('Detectron2')
         
         if TRANSFORMERS_AVAILABLE:
             available.append('DETR')
@@ -212,8 +194,6 @@ class ModelManager:
                 model = YOLO(model_config['file'])
             elif model_config['type'] == 'rtdetr':
                 model = RTDETR(model_config['file'])
-            elif model_config['type'] == 'detectron2':
-                model = self._load_detectron2_model()
             elif model_config['type'] == 'detr':
                 model = self._load_detr_model()
             else:
@@ -226,19 +206,7 @@ class ModelManager:
             st.error(f"Failed to load {model_name}: {str(e)}")
             return None
     
-    def _load_detectron2_model(self):
-        """Load Detectron2 model"""
-        cfg = get_cfg()
-        cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
-        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
-        cfg.MODEL.DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        predictor = DefaultPredictor(cfg)
-        metadata = MetadataCatalog.get(cfg.DATASETS.TRAIN[0])
-        
-        return {'predictor': predictor, 'metadata': metadata, 'cfg': cfg}
-    
+
     def _load_detr_model(self):
         """Load DETR model"""
         processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
@@ -291,8 +259,6 @@ class QueueDetector:
         
         if model_config['type'] in ['yolo', 'rtdetr']:
             return self._detect_ultralytics(image_cv, image, model, model_name, confidence_threshold)
-        elif model_config['type'] == 'detectron2':
-            return self._detect_detectron2(image_cv, image, model, model_name, confidence_threshold)
         elif model_config['type'] == 'detr':
             return self._detect_detr(image_cv, image, model, model_name, confidence_threshold)
     
@@ -342,52 +308,7 @@ class QueueDetector:
             'model_name': model_name
         }
     
-    def _detect_detectron2(self, image_cv, image_pil, model, model_name, confidence_threshold):
-        """Detect using Detectron2 model"""
-        start_time = time.time()
-        
-        # Convert BGR to RGB for Detectron2
-        rgb_image = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
-        
-        # Run inference
-        outputs = model['predictor'](rgb_image)
-        inference_time = time.time() - start_time
-        
-        # Process results
-        instances = outputs["instances"].to("cpu")
-        people_detections = []
-        
-        if len(instances) > 0:
-            boxes = instances.pred_boxes.tensor.numpy()
-            classes = instances.pred_classes.numpy()
-            scores = instances.scores.numpy()
-            
-            for i in range(len(boxes)):
-                if classes[i] == 0 and scores[i] >= confidence_threshold:  # person class
-                    x1, y1, x2, y2 = boxes[i]
-                    people_detections.append({
-                        'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                        'confidence': float(scores[i])
-                    })
-        
-        # Create visualization
-        v = Visualizer(rgb_image, model['metadata'], scale=1.0)
-        vis_output = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-        annotated_image = cv2.cvtColor(vis_output.get_image(), cv2.COLOR_RGB2BGR)
-        
-        # Add title
-        people_count = len(people_detections)
-        title = f'{model_name}: {people_count} People Detected'
-        cv2.putText(annotated_image, title, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        
-        return {
-            'people_count': people_count,
-            'detections': people_detections,
-            'annotated_image': annotated_image,
-            'inference_time': inference_time,
-            'model_name': model_name
-        }
-    
+
     def _detect_detr(self, image_cv, image_pil, model, model_name, confidence_threshold):
         """Detect using DETR model"""
         start_time = time.time()
@@ -474,7 +395,6 @@ def main():
         st.error("❌ No detection models available. Please install required packages:")
         st.code("""
         pip install ultralytics  # For YOLO models
-        pip install 'git+https://github.com/facebookresearch/detectron2.git'  # For Detectron2
         pip install transformers torch  # For DETR
         """)
         return
@@ -752,7 +672,7 @@ def main():
     with status_col2:
         st.markdown("**⚙️ Dependencies**")
         st.markdown(f"✅ Ultralytics: {ULTRALYTICS_AVAILABLE}")
-        st.markdown(f"{'✅' if DETECTRON2_AVAILABLE else '❌'} Detectron2: {DETECTRON2_AVAILABLE}")
+
         st.markdown(f"{'✅' if TRANSFORMERS_AVAILABLE else '❌'} Transformers: {TRANSFORMERS_AVAILABLE}")
     
     with status_col3:
