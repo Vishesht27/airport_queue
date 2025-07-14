@@ -159,6 +159,7 @@ class ModelManager:
                 'description': 'Real-time Detection Transformer - Superior crowd detection',
                 'requirements': ['ultralytics']
             },
+
             'DETR': {
                 'file': 'facebook/detr-resnet-50',
                 'type': 'detr',
@@ -174,6 +175,7 @@ class ModelManager:
         if ULTRALYTICS_AVAILABLE:
             available.extend(['YOLOv8m', 'YOLOv8x', 'YOLOv9e', 'YOLOv10x', 'RT-DETR-X'])
         
+
         if TRANSFORMERS_AVAILABLE:
             available.append('DETR')
         
@@ -194,6 +196,7 @@ class ModelManager:
                 model = YOLO(model_config['file'])
             elif model_config['type'] == 'rtdetr':
                 model = RTDETR(model_config['file'])
+
             elif model_config['type'] == 'detr':
                 model = self._load_detr_model()
             else:
@@ -259,6 +262,7 @@ class QueueDetector:
         
         if model_config['type'] in ['yolo', 'rtdetr']:
             return self._detect_ultralytics(image_cv, image, model, model_name, confidence_threshold)
+
         elif model_config['type'] == 'detr':
             return self._detect_detr(image_cv, image, model, model_name, confidence_threshold)
     
@@ -395,6 +399,7 @@ def main():
         st.error("❌ No detection models available. Please install required packages:")
         st.code("""
         pip install ultralytics  # For YOLO models
+
         pip install transformers torch  # For DETR
         """)
         return
