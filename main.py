@@ -16,51 +16,59 @@ import pandas as pd
 # Load queue prediction model
 @st.cache_resource
 def load_queue_model():
-    """Load the trained queue wait prediction model"""
+    """Load the trained airport check-in queue wait prediction model"""
     try:
-        with open('queue_wait_predictor.pkl', 'rb') as f:
+        with open('airport_checkin_queue_predictor.pkl', 'rb') as f:
             return pickle.load(f)
     except Exception as e:
         st.warning(f"Could not load queue prediction model: {e}")
+        st.info("💡 Please ensure 'airport_checkin_queue_predictor.pkl' is in your project directory")
         return None
 
-def predict_queue_wait(queue_size, model_data, num_counters=3, service_time_per_person=50, 
-                      is_rush_hour=0, is_weekend=0, efficiency_score=2.0, hour=12, queue_type=1):
-    """Predict queue wait time using the trained model"""
+def create_prediction_features(queue_size, hour_of_day):
+    """Create features for the simplified airport check-in model"""
+    data = pd.DataFrame({
+        'queue_size': [queue_size],
+        'hour_of_day': [hour_of_day]
+    })
+    
+    # Same feature engineering as the new model
+    data['hour_sin'] = np.sin(2 * np.pi * data['hour_of_day'] / 24)
+    data['hour_cos'] = np.cos(2 * np.pi * data['hour_of_day'] / 24)
+    data['queue_size_squared'] = data['queue_size'] ** 2
+    data['queue_size_log'] = np.log1p(data['queue_size'])
+    data['queue_hour_interaction'] = data['queue_size'] * data['hour_of_day']
+    data['is_peak_morning'] = ((data['hour_of_day'] >= 7) & (data['hour_of_day'] <= 11)).astype(int)
+    data['is_peak_evening'] = ((data['hour_of_day'] >= 15) & (data['hour_of_day'] <= 19)).astype(int)
+    data['is_off_peak'] = ((data['hour_of_day'] <= 7) | (data['hour_of_day'] >= 20)).astype(int)
+    data['is_small_queue'] = (data['queue_size'] <= 20).astype(int)
+    data['is_medium_queue'] = ((data['queue_size'] > 20) & (data['queue_size'] <= 50)).astype(int)
+    data['is_large_queue'] = ((data['queue_size'] > 50) & (data['queue_size'] <= 100)).astype(int)
+    data['is_huge_queue'] = (data['queue_size'] > 100).astype(int)
+    
+    # Select the same features as training
+    feature_cols = [
+        'queue_size', 'hour_of_day', 'hour_sin', 'hour_cos',
+        'queue_size_squared', 'queue_size_log', 'queue_hour_interaction',
+        'is_peak_morning', 'is_peak_evening', 'is_off_peak',
+        'is_small_queue', 'is_medium_queue', 'is_large_queue', 'is_huge_queue'
+    ]
+    
+    return data[feature_cols]
+
+def predict_checkin_wait_time(queue_size, hour_of_day, model_data):
+    """Predict airport check-in wait time using the simplified model"""
     if model_data is None:
         return None
     
-    # Calculate derived features
-    queue_density = queue_size / num_counters if num_counters > 0 else queue_size
-    hour_sin = np.sin(2 * np.pi * hour / 24)
-    hour_cos = np.cos(2 * np.pi * hour / 24)
-    
-    # Create one-hot encoding for queue type
-    queue_type_0 = 1 if queue_type == 0 else 0
-    queue_type_1 = 1 if queue_type == 1 else 0
-    queue_type_2 = 1 if queue_type == 2 else 0
-    queue_type_3 = 1 if queue_type == 3 else 0
-    
-    # Create input DataFrame
-    input_data = pd.DataFrame({
-        'queue_size': [queue_size],
-        'num_counters': [num_counters],
-        'service_time_per_person': [service_time_per_person],
-        'is_rush_hour': [is_rush_hour],
-        'is_weekend': [is_weekend],
-        'queue_density': [queue_density],
-        'efficiency_score': [efficiency_score],
-        'hour_sin': [hour_sin],
-        'hour_cos': [hour_cos],
-        'queue_type_0': [queue_type_0],
-        'queue_type_1': [queue_type_1],
-        'queue_type_2': [queue_type_2],
-        'queue_type_3': [queue_type_3]
-    })
-    
     try:
-        prediction = model_data['model'].predict(input_data)[0]
-        return max(0, prediction)  # Ensure non-negative wait time
+        # Create features
+        X_input = create_prediction_features(queue_size, hour_of_day)
+        
+        # Make prediction
+        prediction = model_data['model'].predict(X_input)[0]
+        return max(2.0, prediction)  # Minimum 2 minutes wait
+        
     except Exception as e:
         st.error(f"Error making prediction: {e}")
         return None
@@ -71,8 +79,6 @@ try:
     ULTRALYTICS_AVAILABLE = True
 except ImportError:
     ULTRALYTICS_AVAILABLE = False
-
-
 
 try:
     import transformers
@@ -159,7 +165,6 @@ class ModelManager:
                 'description': 'Real-time Detection Transformer - Superior crowd detection',
                 'requirements': ['ultralytics']
             },
-
             'DETR': {
                 'file': 'facebook/detr-resnet-50',
                 'type': 'detr',
@@ -175,7 +180,6 @@ class ModelManager:
         if ULTRALYTICS_AVAILABLE:
             available.extend(['YOLOv8m', 'YOLOv8x', 'YOLOv9e', 'YOLOv10x', 'RT-DETR-X'])
         
-
         if TRANSFORMERS_AVAILABLE:
             available.append('DETR')
         
@@ -196,7 +200,6 @@ class ModelManager:
                 model = YOLO(model_config['file'])
             elif model_config['type'] == 'rtdetr':
                 model = RTDETR(model_config['file'])
-
             elif model_config['type'] == 'detr':
                 model = self._load_detr_model()
             else:
@@ -209,7 +212,6 @@ class ModelManager:
             st.error(f"Failed to load {model_name}: {str(e)}")
             return None
     
-
     def _load_detr_model(self):
         """Load DETR model"""
         processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
@@ -262,7 +264,6 @@ class QueueDetector:
         
         if model_config['type'] in ['yolo', 'rtdetr']:
             return self._detect_ultralytics(image_cv, image, model, model_name, confidence_threshold)
-
         elif model_config['type'] == 'detr':
             return self._detect_detr(image_cv, image, model, model_name, confidence_threshold)
     
@@ -312,7 +313,6 @@ class QueueDetector:
             'model_name': model_name
         }
     
-
     def _detect_detr(self, image_cv, image_pil, model, model_name, confidence_threshold):
         """Detect using DETR model"""
         start_time = time.time()
@@ -376,7 +376,8 @@ def main():
     """Main Streamlit application"""
     
     # Header
-    st.markdown('<h1 class="main-header">✈️ Airport Queue Detection System</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">✈️ Airport Check-in Queue Detection System</h1>', unsafe_allow_html=True)
+    st.markdown("**Designed for initial check-in queues outside the airport**")
     st.markdown("---")
     
     # Initialize model manager and detector
@@ -399,7 +400,6 @@ def main():
         st.error("❌ No detection models available. Please install required packages:")
         st.code("""
         pip install ultralytics  # For YOLO models
-
         pip install transformers torch  # For DETR
         """)
         return
@@ -427,42 +427,47 @@ def main():
     )
     
     # Advanced options
-    with st.sidebar.expander("⚙️ Advanced Options"):
+    with st.sidebar.expander("⚙️ Settings"):
         show_details = st.checkbox("Show detection details", value=True)
         estimate_wait_time = st.checkbox("Estimate wait time", value=True)
-        service_time = st.number_input("Service time per person (seconds)", min_value=10, max_value=300, value=45)
         
-        # Queue prediction settings
-        st.markdown("**🤖 ML Queue Prediction Settings**")
-        use_ml_prediction = st.checkbox("Use ML prediction model", value=True, help="Use trained ML model for more accurate wait time prediction")
+        # ML Queue prediction settings
+        st.markdown("**🤖 Airport Check-in Queue Prediction**")
+        use_ml_prediction = st.checkbox("Use ML prediction model", value=True, 
+                                       help="Uses queue size and current time to predict wait time")
         
         if use_ml_prediction and queue_model_data:
-            num_counters = st.number_input("Number of service counters", min_value=1, max_value=10, value=3)
-            is_rush_hour = st.checkbox("Rush hour", value=False)
-            is_weekend = st.checkbox("Weekend", value=False)
-            efficiency_score = st.slider("Staff efficiency score", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
-            current_hour = st.slider("Current hour (24h)", min_value=0, max_value=23, value=12)
+            st.success("✅ ML model loaded successfully")
+            current_hour = st.slider("Current hour (24h format)", 
+                                    min_value=0, max_value=23, 
+                                    value=datetime.now().hour,
+                                    help="Time affects service speed (peak vs off-peak hours)")
             
-            queue_types = ["Security Check", "Check-in", "Immigration", "Customs"]
-            queue_type = st.selectbox("Queue type", options=queue_types, index=1)
-            queue_type_index = queue_types.index(queue_type)
+            # Show time-based info
+            if 7 <= current_hour <= 11:
+                st.warning("⏰ **Peak Morning Hours (7-11 AM)** - Expect slower service")
+            elif 15 <= current_hour <= 19:
+                st.warning("⏰ **Peak Evening Hours (3-7 PM)** - Busy period")
+            elif current_hour <= 7 or current_hour >= 20:
+                st.info("⏰ **Off-Peak Hours** - Faster service expected")
+            else:
+                st.info("⏰ **Normal Hours** - Standard service speed")
+        elif use_ml_prediction:
+            st.error("❌ ML model not available")
+            current_hour = datetime.now().hour
         else:
-            num_counters = 3
-            is_rush_hour = False
-            is_weekend = False
-            efficiency_score = 2.0
-            current_hour = 12
-            queue_type_index = 1
+            current_hour = datetime.now().hour
+            st.info("📊 Using simple calculation only")
     
     # Main content
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.header("📁 Upload Image")
+        st.header("📁 Upload Queue Image")
         uploaded_file = st.file_uploader(
             "Choose an image file",
             type=['jpg', 'jpeg', 'png', 'bmp'],
-            help="Upload an image of people in a queue"
+            help="Upload an image of people waiting in the airport check-in queue"
         )
         
         if uploaded_file is not None:
@@ -515,31 +520,26 @@ def main():
             
             # Wait time estimation
             if estimate_wait_time and results['people_count'] > 0:
-                # Simple calculation
-                simple_wait_time = (results['people_count'] * service_time) / 60
-                
                 # ML prediction
                 ml_wait_time = None
                 if use_ml_prediction and queue_model_data:
-                    ml_wait_time = predict_queue_wait(
+                    ml_wait_time = predict_checkin_wait_time(
                         queue_size=results['people_count'],
-                        model_data=queue_model_data,
-                        num_counters=num_counters,
-                        service_time_per_person=service_time,
-                        is_rush_hour=1 if is_rush_hour else 0,
-                        is_weekend=1 if is_weekend else 0,
-                        efficiency_score=efficiency_score,
-                        hour=current_hour,
-                        queue_type=queue_type_index
+                        hour_of_day=current_hour,
+                        model_data=queue_model_data
                     )
                 
-                # Determine which wait time to use for status
+                # Simple fallback calculation (3 minutes per person, 3 counters)
+                simple_wait_time = (results['people_count'] * 3) / 3  # minutes
+                
+                # Determine which wait time to display
                 display_wait_time = float(ml_wait_time) if ml_wait_time is not None else simple_wait_time
                 
-                if display_wait_time < 5:
+                # Color coding based on wait time
+                if display_wait_time < 15:
                     card_class = "success-card"
                     status = "✅ Short wait"
-                elif display_wait_time < 15:
+                elif display_wait_time < 45:
                     card_class = "warning-card"
                     status = "⚠️ Moderate wait"
                 else:
@@ -550,23 +550,35 @@ def main():
                 st.markdown(f"**{status}**")
                 
                 if ml_wait_time is not None:
-                    # Convert numpy float to Python float for display
+                    # Display ML prediction
                     ml_wait_time_float = float(ml_wait_time)
-                    st.markdown(f"**🤖 ML Predicted wait time:** {ml_wait_time_float:.1f} minutes")
-                    st.markdown(f"**📊 Simple estimate:** {simple_wait_time:.1f} minutes")
-                    st.markdown(f"**📈 Model confidence:** High (trained on historical data)")
-                else:
-                    st.markdown(f"**📊 Estimated wait time:** {simple_wait_time:.1f} minutes")
-                    st.markdown(f"**Based on:** {service_time}s per person")
+                    st.markdown(f"**🤖 Predicted wait time:** {ml_wait_time_float:.0f} minutes")
+                    st.markdown(f"**📍 Queue size:** {results['people_count']} people")
+                    st.markdown(f"**🕐 Current time:** {current_hour}:00")
+                    
+                    # Show insights based on queue size
+                    if results['people_count'] <= 20:
+                        st.markdown("💡 **Small queue** - Relatively quick processing")
+                    elif results['people_count'] <= 50:
+                        st.markdown("💡 **Medium queue** - Moderate wait expected")
+                    elif results['people_count'] <= 100:
+                        st.markdown("💡 **Large queue** - Significant wait time")
+                    else:
+                        st.markdown("💡 **Very large queue** - Consider alternative timing")
+                    
+                    # Show time-based insights
+                    if 7 <= current_hour <= 11:
+                        st.markdown("⏰ **Morning rush factor included** - Peak travel time")
+                    elif 15 <= current_hour <= 19:
+                        st.markdown("⏰ **Evening rush factor included** - Busy period")
+                    elif current_hour <= 7 or current_hour >= 20:
+                        st.markdown("⏰ **Off-peak hours** - Faster service")
                 
-                # Show additional ML insights
-                if ml_wait_time is not None:
-                    ml_wait_time_float = float(ml_wait_time)
-                    st.markdown(f"**⚙️ Settings:** {num_counters} counters, {queue_type}, {'Rush hour' if is_rush_hour else 'Normal hours'}")
-                    if ml_wait_time_float > simple_wait_time:
-                        st.markdown("⚠️ **Note:** ML model predicts longer wait due to current conditions")
-                    elif ml_wait_time_float < simple_wait_time:
-                        st.markdown("✅ **Note:** ML model predicts shorter wait due to efficient operations")
+                else:
+                    # Fallback to simple calculation
+                    st.markdown(f"**📊 Estimated wait time:** {simple_wait_time:.1f} minutes")
+                    st.markdown("**⚠️ Note:** ML model not available, using simple calculation")
+                    st.markdown("**📍 Assumption:** 3 minutes per person, 3 service counters")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
@@ -598,42 +610,26 @@ def main():
                 'people_count': results['people_count'],
                 'confidence_threshold': confidence_threshold,
                 'inference_time': results['inference_time'],
-                'detections': results['detections']
+                'detections': results['detections'],
+                'queue_prediction': {}
             }
             
             # Add ML prediction data if available
             if estimate_wait_time and results['people_count'] > 0:
-                simple_wait_time = (results['people_count'] * service_time) / 60
-                download_data['wait_time_estimation'] = {
-                    'simple_estimate_minutes': simple_wait_time,
-                    'service_time_per_person_seconds': service_time,
-                    'ml_prediction_available': use_ml_prediction and queue_model_data is not None
-                }
-                
                 if use_ml_prediction and queue_model_data:
-                    ml_wait_time = predict_queue_wait(
+                    ml_wait_time = predict_checkin_wait_time(
                         queue_size=results['people_count'],
-                        model_data=queue_model_data,
-                        num_counters=num_counters,
-                        service_time_per_person=service_time,
-                        is_rush_hour=1 if is_rush_hour else 0,
-                        is_weekend=1 if is_weekend else 0,
-                        efficiency_score=efficiency_score,
-                        hour=current_hour,
-                        queue_type=queue_type_index
+                        hour_of_day=current_hour,
+                        model_data=queue_model_data
                     )
                     
                     if ml_wait_time is not None:
-                        # Convert numpy types to Python types for JSON serialization
-                        download_data['wait_time_estimation']['ml_prediction_minutes'] = float(ml_wait_time)
-                        download_data['wait_time_estimation']['ml_settings'] = {
-                            'num_counters': int(num_counters),
-                            'is_rush_hour': bool(is_rush_hour),
-                            'is_weekend': bool(is_weekend),
-                            'efficiency_score': float(efficiency_score),
-                            'current_hour': int(current_hour),
-                            'queue_type': str(queue_type),
-                            'queue_type_index': int(queue_type_index)
+                        download_data['queue_prediction'] = {
+                            'ml_prediction_minutes': float(ml_wait_time),
+                            'queue_size': results['people_count'],
+                            'hour_of_day': current_hour,
+                            'model_type': 'airport_checkin_simplified',
+                            'features_used': ['queue_size', 'hour_of_day']
                         }
             
             col_d, col_e = st.columns(2)
@@ -664,49 +660,87 @@ def main():
     # Footer
     st.markdown("---")
     
-    # Model status
+    # System Status
     st.subheader("🔧 System Status")
     
     status_col1, status_col2, status_col3 = st.columns(3)
     
     with status_col1:
-        st.markdown("**📦 Available Models**")
+        st.markdown("**📦 Available Detection Models**")
         for model in available_models:
             st.markdown(f"✅ {model}")
     
     with status_col2:
         st.markdown("**⚙️ Dependencies**")
         st.markdown(f"✅ Ultralytics: {ULTRALYTICS_AVAILABLE}")
-
         st.markdown(f"{'✅' if TRANSFORMERS_AVAILABLE else '❌'} Transformers: {TRANSFORMERS_AVAILABLE}")
+        st.markdown(f"🖥️ Device: {'GPU' if torch.cuda.is_available() else 'CPU'}")
     
     with status_col3:
-        st.markdown("**🎮 Hardware**")
-        st.markdown(f"🖥️ Device: {'GPU' if torch.cuda.is_available() else 'CPU'}")
-        if torch.cuda.is_available():
-            st.markdown(f"🚀 GPU: {torch.cuda.get_device_name(0)}")
-    
-    # Add ML model status
-    st.markdown("---")
-    status_col4, status_col5 = st.columns(2)
-    
-    with status_col4:
         st.markdown("**🤖 ML Queue Prediction**")
         if queue_model_data:
-            st.markdown("✅ Queue prediction model loaded")
-            st.markdown(f"📊 Model type: {type(queue_model_data.get('model', 'Unknown')).__name__}")
+            st.markdown("✅ Airport check-in model loaded")
+            st.markdown("🎯 Features: Queue size + Hour")
+            st.markdown("📊 Realistic wait times (2-240 min)")
+            if 'mae' in queue_model_data:
+                st.markdown(f"📈 Model accuracy: {queue_model_data['mae']:.1f} min MAE")
         else:
             st.markdown("❌ Queue prediction model not available")
-            st.markdown("💡 Place `queue_wait_predictor.pkl` in the project directory")
+            st.markdown("💡 Train model in Google Colab first")
+            st.markdown("📁 Save as 'airport_checkin_queue_predictor.pkl'")
     
-    with status_col5:
-        st.markdown("**📈 Prediction Features**")
-        if queue_model_data:
-            st.markdown("✅ Queue size, counters, time factors")
-            st.markdown("✅ Rush hour, weekend, efficiency")
-            st.markdown("✅ Queue type classification")
-        else:
-            st.markdown("❌ No ML features available")
+    # Add example predictions section
+    if queue_model_data:
+        st.markdown("---")
+        st.subheader("📈 Example Wait Time Predictions")
+        
+        # Create example scenarios
+        example_col1, example_col2 = st.columns(2)
+        
+        with example_col1:
+            st.markdown("**🌅 Morning Scenarios**")
+            
+            morning_examples = [
+                (10, 7, "10 people at 7 AM"),
+                (25, 8, "25 people at 8 AM"), 
+                (40, 9, "40 people at 9 AM"),
+                (60, 10, "60 people at 10 AM")
+            ]
+            
+            for queue_size, hour, description in morning_examples:
+                wait_time = predict_checkin_wait_time(queue_size, hour, queue_model_data)
+                if wait_time:
+                    if wait_time < 15:
+                        icon = "🟢"
+                    elif wait_time < 45:
+                        icon = "🟡"
+                    else:
+                        icon = "🔴"
+                    st.markdown(f"{icon} {description}: **{wait_time:.0f} min**")
+        
+        with example_col2:
+            st.markdown("**🌆 Evening Scenarios**")
+            
+            evening_examples = [
+                (15, 17, "15 people at 5 PM"),
+                (30, 18, "30 people at 6 PM"),
+                (50, 19, "50 people at 7 PM"),
+                (20, 22, "20 people at 10 PM")
+            ]
+            
+            for queue_size, hour, description in evening_examples:
+                wait_time = predict_checkin_wait_time(queue_size, hour, queue_model_data)
+                if wait_time:
+                    if wait_time < 15:
+                        icon = "🟢"
+                    elif wait_time < 45:
+                        icon = "🟡"
+                    else:
+                        icon = "🔴"
+                    st.markdown(f"{icon} {description}: **{wait_time:.0f} min**")
+        
+        # Color legend
+        st.markdown("**Legend:** 🟢 Short (<15 min) | 🟡 Moderate (15-45 min) | 🔴 Long (>45 min)")
 
 if __name__ == "__main__":
     main()
