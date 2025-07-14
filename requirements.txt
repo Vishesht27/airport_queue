@@ -8,6 +8,7 @@ torchaudio
 ultralytics
 transformers
 timm
+opencv-python
 scikit-learn
 pandas
 xgboost
