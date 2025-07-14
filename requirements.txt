@@ -1,7 +1,7 @@
 streamlit
 opencv-python-headless
 numpy
-pillow==9.50
+pillow==9.5.0
 torch
 torchvision
 torchaudio
