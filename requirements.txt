@@ -2,7 +2,8 @@ streamlit
 opencv-python-headless
 numpy
 pillow==9.5.0
-torch
+pyyaml==5.1
+torch==1.8.0
 torchvision
 torchaudio
 ultralytics
@@ -13,4 +14,5 @@ scikit-learn
 pandas
 xgboost
 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu113/torch1.10/index.html
-detectron2
+black>=21.5.0
+detectron2==0.6+cu113
