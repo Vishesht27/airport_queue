@@ -375,57 +375,350 @@ class QueueDetector:
             'model_name': model_name
         }
 
-class VideoStream:
-    def __init__(self, src=0):
-        self.cap = cv2.VideoCapture(src)
-        self.frame_queue = deque(maxlen=10)  # Store up to 10 frames
+class LiveVideoDetector:
+    def __init__(self, model_manager, detector):
+        self.model_manager = model_manager
+        self.detector = detector
+        self.cap = None
         self.is_running = False
-        self.thread = None
-        self.lock = threading.Lock()
+        self.frame_queue = queue.Queue(maxsize=2)  # Small buffer
+        self.capture_thread = None
         
-        # Set camera properties for better performance
-        if self.cap.isOpened():
+    def start_camera(self, camera_index=0):
+        """Start the camera capture"""
+        try:
+            self.cap = cv2.VideoCapture(camera_index)
+            if not self.cap.isOpened():
+                raise Exception("Could not open camera")
+            
+            # Set camera properties for better performance
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             self.cap.set(cv2.CAP_PROP_FPS, 30)
-
-    def start(self):
-        if not self.is_running:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer lag
+            
             self.is_running = True
-            self.thread = threading.Thread(target=self._capture_frames, daemon=True)
-            self.thread.start()
-
-    def stop(self):
+            
+            # Start capture thread
+            self.capture_thread = threading.Thread(target=self._capture_frames, daemon=True)
+            self.capture_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Failed to start camera: {e}")
+            return False
+    
+    def stop_camera(self):
+        """Stop the camera capture"""
         self.is_running = False
-        if self.cap.isOpened():
+        
+        if self.capture_thread and self.capture_thread.is_alive():
+            self.capture_thread.join(timeout=2)
+        
+        if self.cap:
             self.cap.release()
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
-
+            self.cap = None
+        
+        # Clear frame queue
+        while not self.frame_queue.empty():
+            try:
+                self.frame_queue.get_nowait()
+            except queue.Empty:
+                break
+    
     def _capture_frames(self):
-        while self.is_running:
-            if self.cap.isOpened():
-                ret, frame = self.cap.read()
-                if ret:
-                    with self.lock:
-                        self.frame_queue.append(frame)
-                else:
-                    break
+        """Capture frames in background thread"""
+        while self.is_running and self.cap and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                # Only keep the latest frame to avoid lag
+                try:
+                    if not self.frame_queue.empty():
+                        self.frame_queue.get_nowait()  # Remove old frame
+                    self.frame_queue.put(frame, timeout=0.1)
+                except (queue.Full, queue.Empty):
+                    pass
             else:
                 break
-            time.sleep(0.033)  # ~30 FPS capture rate
-        
-        if self.cap.isOpened():
-            self.cap.release()
-
-    def get_frame(self):
-        with self.lock:
-            if self.frame_queue:
-                return self.frame_queue[-1].copy()  # Return a copy of the latest frame
-        return None
+            
+            time.sleep(0.033)  # ~30 FPS
     
-    def is_active(self):
-        return self.is_running and self.cap.isOpened()
+    def get_latest_frame(self):
+        """Get the most recent frame"""
+        try:
+            return self.frame_queue.get_nowait()
+        except queue.Empty:
+            return None
+    
+    def is_camera_active(self):
+        """Check if camera is active"""
+        return self.is_running and self.cap and self.cap.isOpened()
+
+def enhanced_live_video_section(selected_model, confidence_threshold, queue_model_data, current_hour, estimate_wait_time, use_ml_prediction):
+    """Enhanced live video detection section"""
+    
+    st.subheader("🎥 Live Webcam Detection")
+    
+    # Initialize video detector in session state
+    if 'video_detector' not in st.session_state:
+        st.session_state.video_detector = LiveVideoDetector(
+            st.session_state.model_manager, 
+            st.session_state.detector
+        )
+        st.session_state.camera_active = False
+        st.session_state.last_detection_time = 0
+        st.session_state.detection_interval = 10  # seconds
+        st.session_state.current_detection_results = None
+        st.session_state.live_detection_history = []
+    
+    # Controls
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if not st.session_state.camera_active:
+            if st.button("🎬 Start Camera", type="primary"):
+                if st.session_state.video_detector.start_camera():
+                    st.session_state.camera_active = True
+                    st.session_state.last_detection_time = 0  # Trigger immediate detection
+                    st.success("✅ Camera started!")
+                    st.rerun()
+        else:
+            if st.button("⏹️ Stop Camera"):
+                st.session_state.video_detector.stop_camera()
+                st.session_state.camera_active = False
+                st.success("✅ Camera stopped!")
+                st.rerun()
+    
+    with col2:
+        # Detection interval control
+        new_interval = st.selectbox(
+            "Detection Interval", 
+            [5, 8, 10, 15, 20], 
+            index=2,  # Default to 10 seconds
+            key="detection_interval_select"
+        )
+        if new_interval != st.session_state.detection_interval:
+            st.session_state.detection_interval = new_interval
+    
+    with col3:
+        # Camera status
+        if st.session_state.camera_active:
+            if st.session_state.video_detector.is_camera_active():
+                st.success("🟢 Camera Active")
+            else:
+                st.error("🔴 Camera Error")
+        else:
+            st.info("⚪ Camera Off")
+    
+    # Main video display and detection
+    if st.session_state.camera_active:
+        
+        # Create placeholders for dynamic content
+        video_col, info_col = st.columns([2, 1])
+        
+        with video_col:
+            video_placeholder = st.empty()
+        
+        with info_col:
+            status_placeholder = st.empty()
+            detection_placeholder = st.empty()
+        
+        # Get current frame
+        current_frame = st.session_state.video_detector.get_latest_frame()
+        current_time = time.time()
+        
+        if current_frame is not None:
+            # Convert to RGB for display
+            frame_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
+            
+            # Always show current frame
+            with video_placeholder.container():
+                st.image(
+                    frame_rgb, 
+                    caption=f"Live Video Feed (Detecting every {st.session_state.detection_interval}s)", 
+                    use_column_width=True
+                )
+            
+            # Check if it's time for detection
+            time_since_last = current_time - st.session_state.last_detection_time
+            
+            if time_since_last >= st.session_state.detection_interval:
+                # Time for detection!
+                st.session_state.last_detection_time = current_time
+                
+                with status_placeholder.container():
+                    with st.spinner("🔍 Detecting people..."):
+                        # Run detection on current frame
+                        pil_image = Image.fromarray(frame_rgb)
+                        
+                        detection_results = st.session_state.detector.detect_people(
+                            pil_image, selected_model, confidence_threshold
+                        )
+                        
+                        if detection_results:
+                            st.session_state.current_detection_results = detection_results
+                            
+                            # Add to history
+                            detection_record = {
+                                'timestamp': current_time,
+                                'people_count': detection_results['people_count'],
+                                'model': selected_model,
+                                'confidence': confidence_threshold,
+                                'inference_time': detection_results['inference_time']
+                            }
+                            
+                            st.session_state.live_detection_history.append(detection_record)
+                            
+                            # Keep only last 20 detections
+                            if len(st.session_state.live_detection_history) > 20:
+                                st.session_state.live_detection_history.pop(0)
+                            
+                            # Show results
+                            with detection_placeholder.container():
+                                st.success(f"✅ **{detection_results['people_count']} people detected**")
+                                st.info(f"⚡ {detection_results['inference_time']:.2f}s | 🎯 {selected_model}")
+                                
+                                # Show wait time prediction for live detection
+                                if estimate_wait_time and detection_results['people_count'] > 0:
+                                    # ML prediction
+                                    ml_wait_time = None
+                                    if use_ml_prediction and queue_model_data:
+                                        # Use real-time hour if in automatic mode
+                                        prediction_hour = datetime.now().hour if st.session_state.get('time_mode', '🤖 Automatic (Real-time)') == '🤖 Automatic (Real-time)' else current_hour
+                                        
+                                        ml_wait_time = predict_checkin_wait_time(
+                                            queue_size=detection_results['people_count'],
+                                            hour_of_day=prediction_hour,
+                                            model_data=queue_model_data
+                                        )
+                                    
+                                    # Simple fallback calculation
+                                    simple_wait_time = (detection_results['people_count'] * 3) / 3  # minutes
+                                    
+                                    # Determine which wait time to display
+                                    display_wait_time = float(ml_wait_time) if ml_wait_time is not None else simple_wait_time
+                                    
+                                    # Show wait time with color coding
+                                    if display_wait_time < 15:
+                                        st.success(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
+                                    elif display_wait_time < 45:
+                                        st.warning(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
+                                    else:
+                                        st.error(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
+                        else:
+                            with detection_placeholder.container():
+                                st.error("❌ Detection failed")
+            
+            else:
+                # Show countdown to next detection
+                time_remaining = st.session_state.detection_interval - time_since_last
+                
+                with status_placeholder.container():
+                    st.info(f"⏱️ Next detection in {time_remaining:.1f}s")
+                    
+                    # Progress bar
+                    progress = 1 - (time_remaining / st.session_state.detection_interval)
+                    st.progress(progress)
+                    
+                    # Show last detection if available
+                    if st.session_state.current_detection_results:
+                        people_count = st.session_state.current_detection_results['people_count']
+                        st.markdown(f"📊 Last detection: **{people_count} people**")
+        
+        else:
+            with video_placeholder.container():
+                st.warning("⚠️ No video frame available")
+        
+        # Auto-refresh for continuous updates
+        time.sleep(0.5)  # Small delay to prevent too frequent updates
+        st.rerun()
+    
+    # Show detection results if available
+    if st.session_state.current_detection_results:
+        st.markdown("---")
+        st.subheader("🔍 Latest Live Detection Results")
+        
+        results = st.session_state.current_detection_results
+        
+        # Display annotated image
+        annotated_image_rgb = cv2.cvtColor(results['annotated_image'], cv2.COLOR_BGR2RGB)
+        st.image(
+            annotated_image_rgb, 
+            caption=f"Latest Detection - {results['model_name']}", 
+            use_column_width=True
+        )
+        
+        # Metrics
+        metric_col1, metric_col2, metric_col3 = st.columns(3)
+        
+        with metric_col1:
+            st.metric("👥 People Count", results['people_count'])
+        
+        with metric_col2:
+            st.metric("⚡ Inference Time", f"{results['inference_time']:.2f}s")
+        
+        with metric_col3:
+            detection_time = datetime.fromtimestamp(st.session_state.last_detection_time)
+            st.metric("🕐 Detection Time", detection_time.strftime("%H:%M:%S"))
+    
+    # Detection history chart
+    if len(st.session_state.live_detection_history) > 1:
+        st.markdown("---")
+        st.subheader("📈 Live Detection History")
+        
+        # Create simple line chart
+        try:
+            import plotly.graph_objects as go
+            
+            times = [
+                datetime.fromtimestamp(d['timestamp']).strftime('%H:%M:%S') 
+                for d in st.session_state.live_detection_history
+            ]
+            counts = [d['people_count'] for d in st.session_state.live_detection_history]
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=times,
+                y=counts,
+                mode='lines+markers',
+                name='People Count',
+                line=dict(color='#1f77b4', width=3),
+                marker=dict(size=8)
+            ))
+            
+            fig.update_layout(
+                title=f"Live People Count Over Time (Last {len(st.session_state.live_detection_history)} detections)",
+                xaxis_title="Time",
+                yaxis_title="Number of People",
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        except ImportError:
+            # Fallback if plotly not available
+            st.info("📊 Install plotly for detection history charts: `pip install plotly`")
+        
+        # Recent detections table
+        if st.expander("📊 Recent Live Detection Details", expanded=False):
+            recent_detections = []
+            for detection in reversed(st.session_state.live_detection_history[-10:]):  # Last 10
+                recent_detections.append({
+                    'Time': datetime.fromtimestamp(detection['timestamp']).strftime('%H:%M:%S'),
+                    'People': detection['people_count'],
+                    'Model': detection['model'],
+                    'Confidence': detection['confidence'],
+                    'Inference (s)': f"{detection['inference_time']:.2f}"
+                })
+            
+            st.dataframe(recent_detections, use_container_width=True)
+            
+            # Clear history button
+            if st.button("🗑️ Clear Live History", key="clear_live_history"):
+                st.session_state.live_detection_history = []
+                st.success("✅ Live detection history cleared!")
+                st.rerun()
 
 def main():
     """Main Streamlit application"""
@@ -447,23 +740,6 @@ def main():
     
     # Sidebar
     st.sidebar.header("🔧 Configuration")
-    
-    # Video streaming info
-    with st.sidebar.expander("ℹ️ Video Streaming Info"):
-        st.markdown("""
-        **🎥 Video Stream Features:**
-        - Uses your MacBook's webcam as video source
-        - Auto-detects people every 8 seconds (configurable)
-        - Real-time video display with continuous updates
-        - Automatic detection history tracking
-        - Live queue monitoring
-        
-        **💡 Tips:**
-        - Position camera to capture queue area
-        - Ensure good lighting for better detection
-        - Adjust confidence threshold as needed
-        - Stream auto-refreshes every 2 seconds
-        """)
     
     # Check available models
     available_models = st.session_state.model_manager.get_available_models()
@@ -503,20 +779,6 @@ def main():
         show_details = st.checkbox("Show detection details", value=True)
         estimate_wait_time = st.checkbox("Estimate wait time", value=True)
         
-        # Video stream settings
-        st.markdown("**🎥 Video Stream Settings**")
-        frame_interval = st.slider(
-            "Frame sampling interval (seconds)",
-            min_value=1,
-            max_value=30,
-            value=8,
-            help="How often to sample frames from the video stream for detection"
-        )
-        
-        # Update frame interval in session state
-        if 'frame_interval' in st.session_state:
-            st.session_state.frame_interval = frame_interval
-        
         # ML Queue prediction settings
         st.markdown("**🤖 Airport Check-in Queue Prediction**")
         use_ml_prediction = st.checkbox("Use ML prediction model", value=True, 
@@ -524,10 +786,24 @@ def main():
         
         if use_ml_prediction and queue_model_data:
             st.success("✅ ML model loaded successfully")
-            current_hour = st.slider("Current hour (24h format)", 
-                                    min_value=0, max_value=23, 
-                                    value=datetime.now().hour,
-                                    help="Time affects service speed (peak vs off-peak hours)")
+            
+            # Time detection mode
+            time_mode = st.radio(
+                "⏰ Time Detection Mode",
+                ["🤖 Automatic (Real-time)", "⚙️ Manual Override"],
+                index=0,
+                help="Choose automatic real-time detection or manual time setting"
+            )
+            
+            if time_mode == "🤖 Automatic (Real-time)":
+                current_hour = datetime.now().hour
+                st.info(f"🕐 **Current time: {current_hour}:00** (Auto-detected and updating)")
+            else:
+                current_hour = st.slider("Current hour (24h format)", 
+                                        min_value=0, max_value=23, 
+                                        value=datetime.now().hour,
+                                        help="Time affects service speed (peak vs off-peak hours)")
+                st.info(f"🕐 **Using manual time: {current_hour}:00**")
             
             # Show time-based info
             if 7 <= current_hour <= 11:
@@ -538,274 +814,33 @@ def main():
                 st.info("⏰ **Off-Peak Hours** - Faster service expected")
             else:
                 st.info("⏰ **Normal Hours** - Standard service speed")
+                
+            # Store time mode in session state for live detection
+            st.session_state.time_mode = time_mode
+                
         elif use_ml_prediction:
             st.error("❌ ML model not available")
             current_hour = datetime.now().hour
+            st.session_state.time_mode = "🤖 Automatic (Real-time)"
         else:
             current_hour = datetime.now().hour
+            st.session_state.time_mode = "🤖 Automatic (Real-time)"
             st.info("📊 Using simple calculation only")
     
     # Main content
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.header("📹 Video Stream & Image Upload")
+        st.header("📹 Video & Image Detection")
         
-        # Video streaming section
-        st.subheader("🎥 Live Video Stream")
-        
-        # Initialize video stream in session state
-        if 'video_stream' not in st.session_state:
-            st.session_state.video_stream = None
-            st.session_state.stream_active = False
-            st.session_state.last_frame_time = 0
-            st.session_state.frame_interval = 8  # seconds
-            st.session_state.frame_history = []  # Store recent frames with timestamps
-            st.session_state.detection_history = []  # Store detection results
-        
-        # Video stream controls
-        col_video1, col_video2, col_video3 = st.columns(3)
-        
-        with col_video1:
-            if not st.session_state.stream_active:
-                if st.button("🎬 Start Video Stream", type="primary"):
-                    try:
-                        st.session_state.video_stream = VideoStream(src=0)  # Use MacBook webcam
-                        st.session_state.video_stream.start()
-                        st.session_state.stream_active = True
-                        st.session_state.last_frame_time = 0  # Force immediate first detection
-                        st.success("✅ Video stream started! First detection will happen immediately.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Failed to start video stream: {e}")
-        
-        with col_video2:
-            if st.session_state.stream_active:
-                if st.button("⏹️ Stop Video Stream"):
-                    if st.session_state.video_stream:
-                        st.session_state.video_stream.stop()
-                    st.session_state.stream_active = False
-                    st.session_state.video_stream = None
-                    st.success("✅ Video stream stopped!")
-                    st.rerun()
-        
-        with col_video3:
-            # Stream status indicator
-            if st.session_state.stream_active:
-                if st.session_state.video_stream and st.session_state.video_stream.is_active():
-                    st.markdown("🟢 **Stream Active**")
-                else:
-                    st.markdown("🔴 **Stream Error**")
-            else:
-                st.markdown("⚪ **Stream Inactive**")
-        
-        # Display video stream with auto-refresh
-        if st.session_state.stream_active and st.session_state.video_stream:
-            # Create placeholders for dynamic content
-            video_placeholder = st.empty()
-            status_placeholder = st.empty()
-            detection_placeholder = st.empty()
-            
-            # Get current frame
-            current_frame = st.session_state.video_stream.get_frame()
-            current_time = time.time()
-            
-            if current_frame is not None:
-                # Convert frame to RGB for display
-                frame_rgb = cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB)
-                
-                # Always display the current frame
-                video_placeholder.image(frame_rgb, caption=f"Live Video Stream (Auto-detecting every {st.session_state.frame_interval} seconds)", use_column_width=True)
-                
-                # Check if it's time to run detection (every 8 seconds)
-                # Initialize last_frame_time if not set
-                if 'last_frame_time' not in st.session_state:
-                    st.session_state.last_frame_time = 0
-                
-                # Debug: Show current timing info
-                time_since_last_detection = current_time - st.session_state.last_frame_time
-                st.markdown(f"**Debug:** Time since last detection: {time_since_last_detection:.1f}s / {st.session_state.frame_interval}s")
-                
-                # Check if enough time has passed since last detection
-                if time_since_last_detection >= st.session_state.frame_interval:
-                    st.session_state.last_frame_time = current_time
-                    
-                    # Run detection
-                    with status_placeholder.container():
-                        with st.spinner("🔍 Detecting people in current frame..."):
-                            results = st.session_state.detector.detect_people(
-                                Image.fromarray(frame_rgb), selected_model, confidence_threshold
-                            )
-                            
-                            if results:
-                                st.session_state.detection_results = results
-                                st.session_state.last_detection_time = current_time
-                                
-                                # Store in history
-                                detection_record = {
-                                    'timestamp': current_time,
-                                    'people_count': results['people_count'],
-                                    'model_used': selected_model,
-                                    'confidence_threshold': confidence_threshold
-                                }
-                                st.session_state.detection_history.append(detection_record)
-                                
-                                # Keep only last 10 detections
-                                if len(st.session_state.detection_history) > 10:
-                                    st.session_state.detection_history.pop(0)
-                                
-                                # Show detection results with more details
-                                col_result1, col_result2 = st.columns(2)
-                                with col_result1:
-                                    st.success(f"✅ **{results['people_count']} people detected**")
-                                with col_result2:
-                                    st.info(f"⚡ {results['inference_time']:.2f}s | 🎯 {selected_model}")
-                            else:
-                                st.error("❌ Detection failed")
-                else:
-                    # Show countdown and last detection info
-                    time_until_next = st.session_state.frame_interval - (current_time - st.session_state.last_frame_time)
-                    
-                    with status_placeholder.container():
-                        # Show countdown with progress bar
-                        st.markdown(f"⏱️ **Next detection in {time_until_next:.1f} seconds**")
-                        
-                        # Progress bar for countdown
-                        progress = 1 - (time_until_next / st.session_state.frame_interval)
-                        st.progress(progress)
-                        
-                        # Show last detection info if available
-                        if 'detection_results' in st.session_state and 'last_detection_time' in st.session_state:
-                            time_since_detection = current_time - st.session_state.last_detection_time
-                            st.info(f"📊 **Last detection:** {st.session_state.detection_results['people_count']} people ({time_since_detection:.1f}s ago)")
-                
-            else:
-                st.warning("⚠️ No video frame available")
-        
-        # Add auto-refresh for video stream
-        if st.session_state.stream_active:
-            # Track refresh time in session state
-            if 'last_refresh_time' not in st.session_state:
-                st.session_state.last_refresh_time = time.time()
-            
-            current_time = time.time()
-            time_since_refresh = current_time - st.session_state.last_refresh_time
-            
-            # Show refresh status
-            st.markdown(f"🔄 Auto-refreshing... (Last refresh: {time_since_refresh:.1f}s ago)")
-            
-            # Manual refresh button for testing
-            if st.button("🔄 Manual Refresh", key="manual_refresh"):
-                st.session_state.last_refresh_time = current_time
-                st.rerun()
-            
-            # Force refresh every 3 seconds using JavaScript
-            if time_since_refresh >= 3:
-                st.session_state.last_refresh_time = current_time
-                st.markdown("""
-                <script>
-                    setTimeout(function(){
-                        window.location.reload();
-                    }, 100);
-                </script>
-                """, unsafe_allow_html=True)
-        
-        # Video stream statistics
-        if st.session_state.stream_active and st.session_state.video_stream:
-            st.subheader("📊 Video Stream Statistics")
-            
-            col_stats1, col_stats2, col_stats3 = st.columns(3)
-            
-            with col_stats1:
-                st.metric("Frame Interval", f"{st.session_state.frame_interval}s")
-            
-            with col_stats2:
-                if 'last_detection_time' in st.session_state:
-                    time_since_last = time.time() - st.session_state.last_detection_time
-                    st.metric("Last Detection", f"{time_since_last:.1f}s ago")
-                else:
-                    st.metric("Last Detection", "None")
-            
-            with col_stats3:
-                if st.session_state.video_stream.is_active():
-                    st.metric("Stream Status", "🟢 Active")
-                else:
-                    st.metric("Stream Status", "🔴 Error")
-            
-            # Debug information
-            if st.session_state.stream_active:
-                st.subheader("🐛 Debug Information")
-                col_debug1, col_debug2 = st.columns(2)
-                
-                with col_debug1:
-                    st.markdown(f"**Current Time:** {datetime.now().strftime('%H:%M:%S')}")
-                    st.markdown(f"**Last Frame Time:** {st.session_state.last_frame_time:.1f}")
-                    st.markdown(f"**Frame Interval:** {st.session_state.frame_interval}s")
-                
-                with col_debug2:
-                    if 'detection_results' in st.session_state:
-                        st.markdown(f"**Last Detection:** {st.session_state.detection_results['people_count']} people")
-                        st.markdown(f"**Detection Time:** {st.session_state.last_detection_time:.1f}")
-                    else:
-                        st.markdown("**Last Detection:** None")
-                    
-                    st.markdown(f"**Detection History Count:** {len(st.session_state.detection_history)}")
-            
-            # Detection history
-            if st.session_state.detection_history:
-                st.subheader("📈 Recent Detections")
-                
-                # Create a simple chart of recent detections
-                if len(st.session_state.detection_history) > 1:
-                    import plotly.express as px
-                    import plotly.graph_objects as go
-                    
-                    # Prepare data for plotting
-                    times = [datetime.fromtimestamp(d['timestamp']).strftime('%H:%M:%S') for d in st.session_state.detection_history]
-                    counts = [d['people_count'] for d in st.session_state.detection_history]
-                    
-                    # Create line chart
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=times,
-                        y=counts,
-                        mode='lines+markers',
-                        name='People Count',
-                        line=dict(color='#1f77b4', width=3),
-                        marker=dict(size=8)
-                    ))
-                    
-                    fig.update_layout(
-                        title="People Count Over Time",
-                        xaxis_title="Time",
-                        yaxis_title="Number of People",
-                        height=300,
-                        showlegend=False
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                # Show recent detection table
-                st.markdown("**Recent Detection Results:**")
-                detection_data = []
-                for i, detection in enumerate(reversed(st.session_state.detection_history[-5:])):  # Show last 5
-                    time_str = datetime.fromtimestamp(detection['timestamp']).strftime('%H:%M:%S')
-                    detection_data.append({
-                        'Time': time_str,
-                        'People Count': detection['people_count'],
-                        'Model': detection['model_used'],
-                        'Confidence': detection['confidence_threshold']
-                    })
-                
-                st.dataframe(detection_data, use_container_width=True)
-                
-                # Clear history button
-                if st.button("🗑️ Clear Detection History", key="clear_history"):
-                    st.session_state.detection_history = []
-                    st.success("✅ Detection history cleared!")
-                    st.rerun()
+        # Enhanced live video section
+        enhanced_live_video_section(
+            selected_model, confidence_threshold, queue_model_data, 
+            current_hour, estimate_wait_time, use_ml_prediction
+        )
         
         # Image upload section
+        st.markdown("---")
         st.subheader("📁 Upload Queue Image")
         uploaded_file = st.file_uploader(
             "Choose an image file",
@@ -836,8 +871,11 @@ def main():
     with col2:
         st.header("📊 Detection Results")
         
+        # Show uploaded image results if available
         if 'detection_results' in st.session_state:
             results = st.session_state.detection_results
+            
+            st.subheader("🖼️ Uploaded Image Results")
             
             # Display annotated image
             annotated_image_rgb = cv2.cvtColor(results['annotated_image'], cv2.COLOR_BGR2RGB)
@@ -866,9 +904,12 @@ def main():
                 # ML prediction
                 ml_wait_time = None
                 if use_ml_prediction and queue_model_data:
+                    # Use real-time hour if in automatic mode
+                    prediction_hour = datetime.now().hour if st.session_state.get('time_mode', '🤖 Automatic (Real-time)') == '🤖 Automatic (Real-time)' else current_hour
+                    
                     ml_wait_time = predict_checkin_wait_time(
                         queue_size=results['people_count'],
-                        hour_of_day=current_hour,
+                        hour_of_day=prediction_hour,
                         model_data=queue_model_data
                     )
                 
@@ -897,31 +938,14 @@ def main():
                     ml_wait_time_float = float(ml_wait_time)
                     st.markdown(f"**🤖 Predicted wait time:** {ml_wait_time_float:.0f} minutes")
                     st.markdown(f"**📍 Queue size:** {results['people_count']} people")
-                    st.markdown(f"**🕐 Current time:** {current_hour}:00")
-                    
-                    # Show insights based on queue size
-                    if results['people_count'] <= 20:
-                        st.markdown("💡 **Small queue** - Relatively quick processing")
-                    elif results['people_count'] <= 50:
-                        st.markdown("💡 **Medium queue** - Moderate wait expected")
-                    elif results['people_count'] <= 100:
-                        st.markdown("💡 **Large queue** - Significant wait time")
-                    else:
-                        st.markdown("💡 **Very large queue** - Consider alternative timing")
-                    
-                    # Show time-based insights
-                    if 7 <= current_hour <= 11:
-                        st.markdown("⏰ **Morning rush factor included** - Peak travel time")
-                    elif 15 <= current_hour <= 19:
-                        st.markdown("⏰ **Evening rush factor included** - Busy period")
-                    elif current_hour <= 7 or current_hour >= 20:
-                        st.markdown("⏰ **Off-peak hours** - Faster service")
-                
+                    # Show real-time or manual time based on mode
+                    display_hour = datetime.now().hour if st.session_state.get('time_mode', '🤖 Automatic (Real-time)') == '🤖 Automatic (Real-time)' else current_hour
+                    time_mode_text = "Auto" if st.session_state.get('time_mode', '🤖 Automatic (Real-time)') == '🤖 Automatic (Real-time)' else "Manual"
+                    st.markdown(f"**🕐 Current time:** {display_hour}:00 ({time_mode_text})")
                 else:
                     # Fallback to simple calculation
                     st.markdown(f"**📊 Estimated wait time:** {simple_wait_time:.1f} minutes")
                     st.markdown("**⚠️ Note:** ML model not available, using simple calculation")
-                    st.markdown("**📍 Assumption:** 3 minutes per person, 3 service counters")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
@@ -960,9 +984,12 @@ def main():
             # Add ML prediction data if available
             if estimate_wait_time and results['people_count'] > 0:
                 if use_ml_prediction and queue_model_data:
+                    # Use real-time hour if in automatic mode
+                    prediction_hour = datetime.now().hour if st.session_state.get('time_mode', '🤖 Automatic (Real-time)') == '🤖 Automatic (Real-time)' else current_hour
+                    
                     ml_wait_time = predict_checkin_wait_time(
                         queue_size=results['people_count'],
-                        hour_of_day=current_hour,
+                        hour_of_day=prediction_hour,
                         model_data=queue_model_data
                     )
                     
@@ -970,9 +997,10 @@ def main():
                         download_data['queue_prediction'] = {
                             'ml_prediction_minutes': float(ml_wait_time),
                             'queue_size': results['people_count'],
-                            'hour_of_day': current_hour,
+                            'hour_of_day': prediction_hour,
                             'model_type': 'airport_checkin_simplified',
-                            'features_used': ['queue_size', 'hour_of_day']
+                            'features_used': ['queue_size', 'hour_of_day'],
+                            'time_mode': st.session_state.get('time_mode', '🤖 Automatic (Real-time)')
                         }
             
             col_d, col_e = st.columns(2)
@@ -998,7 +1026,7 @@ def main():
                 )
         
         else:
-            st.info("👆 Upload an image and click 'Detect People in Queue' to see results")
+            st.info("👆 Start live video or upload an image to see detection results")
     
     # Footer
     st.markdown("---")
@@ -1032,83 +1060,30 @@ def main():
             st.markdown("💡 Train model in Google Colab first")
             st.markdown("📁 Save as 'airport_checkin_queue_predictor.pkl'")
     
-    # Add video streaming status
-    status_col4, status_col5 = st.columns(2)
+    # Add live video streaming status
+    status_col4, status_col5, status_col6 = st.columns(3)
     
     with status_col4:
-        st.markdown("**🎥 Video Streaming**")
-        if 'stream_active' in st.session_state and st.session_state.stream_active:
-            if st.session_state.video_stream and st.session_state.video_stream.is_active():
-                st.markdown("🟢 Stream Active")
-                st.markdown(f"⏱️ Frame interval: {st.session_state.frame_interval}s")
-                if 'detection_history' in st.session_state:
-                    st.markdown(f"📊 Detections: {len(st.session_state.detection_history)}")
+        st.markdown("**🎥 Live Video Streaming**")
+        if 'camera_active' in st.session_state and st.session_state.camera_active:
+            if 'video_detector' in st.session_state and st.session_state.video_detector.is_camera_active():
+                st.markdown("🟢 Camera Active")
+                st.markdown(f"⏱️ Detection interval: {st.session_state.detection_interval}s")
+                if 'live_detection_history' in st.session_state:
+                    st.markdown(f"📊 Live detections: {len(st.session_state.live_detection_history)}")
             else:
-                st.markdown("🔴 Stream Error")
+                st.markdown("🔴 Camera Error")
         else:
-            st.markdown("⚪ Stream Inactive")
+            st.markdown("⚪ Camera Inactive")
     
     with status_col5:
-        st.markdown("**📈 Detection History**")
-        if 'detection_history' in st.session_state and st.session_state.detection_history:
-            latest_count = st.session_state.detection_history[-1]['people_count']
+        st.markdown("**📈 Live Detection History**")
+        if 'live_detection_history' in st.session_state and st.session_state.live_detection_history:
+            latest_count = st.session_state.live_detection_history[-1]['people_count']
             st.markdown(f"👥 Latest: {latest_count} people")
-            st.markdown(f"📊 Total: {len(st.session_state.detection_history)} detections")
+            st.markdown(f"📊 Total: {len(st.session_state.live_detection_history)} live detections")
         else:
-            st.markdown("📊 No detections yet")
-    
-    # Add example predictions section
-    if queue_model_data:
-        st.markdown("---")
-        st.subheader("📈 Example Wait Time Predictions")
-        
-        # Create example scenarios
-        example_col1, example_col2 = st.columns(2)
-        
-        with example_col1:
-            st.markdown("**🌅 Morning Scenarios**")
-            
-            morning_examples = [
-                (10, 7, "10 people at 7 AM"),
-                (25, 8, "25 people at 8 AM"), 
-                (40, 9, "40 people at 9 AM"),
-                (60, 10, "60 people at 10 AM")
-            ]
-            
-            for queue_size, hour, description in morning_examples:
-                wait_time = predict_checkin_wait_time(queue_size, hour, queue_model_data)
-                if wait_time:
-                    if wait_time < 15:
-                        icon = "🟢"
-                    elif wait_time < 45:
-                        icon = "🟡"
-                    else:
-                        icon = "🔴"
-                    st.markdown(f"{icon} {description}: **{wait_time:.0f} min**")
-        
-        with example_col2:
-            st.markdown("**🌆 Evening Scenarios**")
-            
-            evening_examples = [
-                (15, 17, "15 people at 5 PM"),
-                (30, 18, "30 people at 6 PM"),
-                (50, 19, "50 people at 7 PM"),
-                (20, 22, "20 people at 10 PM")
-            ]
-            
-            for queue_size, hour, description in evening_examples:
-                wait_time = predict_checkin_wait_time(queue_size, hour, queue_model_data)
-                if wait_time:
-                    if wait_time < 15:
-                        icon = "🟢"
-                    elif wait_time < 45:
-                        icon = "🟡"
-                    else:
-                        icon = "🔴"
-                    st.markdown(f"{icon} {description}: **{wait_time:.0f} min**")
-        
-        # Color legend
-        st.markdown("**Legend:** 🟢 Short (<15 min) | 🟡 Moderate (15-45 min) | 🔴 Long (>45 min)")
+            st.markdown("📊 No live detections yet")
 
 if __name__ == "__main__":
     main()
