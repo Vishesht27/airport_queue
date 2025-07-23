@@ -11,3 +11,4 @@ timm
 scikit-learn
 pandas
 xgboost
+plotly
