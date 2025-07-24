@@ -91,16 +91,33 @@ try:
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
-# Check if running locally or on Streamlit Cloud
+# FIXED: Check if running locally or on Streamlit Cloud
 def is_local_environment():
     """Check if running locally or on Streamlit Cloud"""
-    # Check for Streamlit Cloud environment variables
-    return not (
-        os.getenv('STREAMLIT_SHARING_MODE') or 
-        os.getenv('STREAMLIT_SERVER_HEADLESS') == 'true' or
-        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '') or
-        'share.streamlit.io' in st.get_option('server.baseUrlPath') if hasattr(st, 'get_option') else False
-    )
+    # Multiple checks for Streamlit Cloud deployment
+    cloud_indicators = [
+        os.getenv('STREAMLIT_SERVER_HEADLESS') == 'true',
+        os.getenv('HOME') == '/home/appuser',
+        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', ''),
+        'share.streamlit.io' in os.getenv('STREAMLIT_SERVER_ADDRESS', ''),
+        os.path.exists('/.dockerenv'),
+    ]
+    
+    # If any indicator suggests cloud deployment, return False (not local)
+    is_deployed = any(cloud_indicators)
+    
+    # Additional check: try camera access
+    if not is_deployed:
+        try:
+            test_cap = cv2.VideoCapture(0)
+            has_camera = test_cap.isOpened()
+            test_cap.release()
+            if not has_camera:
+                is_deployed = True
+        except:
+            is_deployed = True
+    
+    return not is_deployed
 
 # Page configuration
 st.set_page_config(
@@ -387,7 +404,7 @@ class QueueDetector:
             'model_name': model_name
         }
 
-# Local environment: Use OpenCV camera capture (same as before)
+# FIXED: Local environment - Live camera section (only shown when truly local)
 class LiveVideoDetector:
     def __init__(self, model_manager, detector):
         self.model_manager = model_manager
@@ -399,10 +416,14 @@ class LiveVideoDetector:
         
     def start_camera(self, camera_index=0):
         """Start the camera capture"""
+        # FIXED: Check if we're in local environment first
+        if not is_local_environment():
+            raise Exception("Camera not available in deployed environment. Use browser camera instead.")
+            
         try:
             self.cap = cv2.VideoCapture(camera_index)
             if not self.cap.isOpened():
-                raise Exception("Could not open camera")
+                raise Exception("Could not open camera - device may be in use or unavailable")
             
             # Set camera properties for better performance
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -467,18 +488,11 @@ class LiveVideoDetector:
         """Check if camera is active"""
         return self.is_running and self.cap and self.cap.isOpened()
 
-# Browser-based camera for deployed apps
+# FIXED: Browser-based camera for deployed apps (simplified and working)
 def browser_camera_section(selected_model, confidence_threshold, queue_model_data, current_hour, estimate_wait_time, use_ml_prediction):
     """Browser-based camera for deployed Streamlit apps"""
     
     st.subheader("📸 Browser Camera Capture")
-    
-    # Info about browser camera
-    st.info("""
-    🌐 **Deployed App Mode**: Using browser camera capture
-    📱 Click 'Take Photo' to capture from your camera, then run detection
-    🔄 You can take multiple photos and run detection on each
-    """)
     
     # Initialize session state for browser camera
     if 'browser_detection_history' not in st.session_state:
@@ -544,13 +558,33 @@ def browser_camera_section(selected_model, confidence_threshold, queue_model_dat
                         # Store results in session state
                         st.session_state.browser_detection_results = results
                         
+                        # Calculate wait time
+                        wait_time = None
+                        if estimate_wait_time and results['people_count'] > 0:
+                            if use_ml_prediction and queue_model_data:
+                                wait_time = predict_checkin_wait_time(
+                                    queue_size=results['people_count'],
+                                    hour_of_day=current_hour,
+                                    model_data=queue_model_data
+                                )
+                            else:
+                                wait_time = (results['people_count'] * 3) / 3
+                        
+                        # Store last detection
+                        st.session_state.last_browser_detection = {
+                            'people_count': results['people_count'],
+                            'wait_time': wait_time,
+                            'timestamp': time.time()
+                        }
+                        
                         # Add to history
                         detection_record = {
                             'timestamp': time.time(),
                             'people_count': results['people_count'],
                             'model': selected_model,
                             'confidence': confidence_threshold,
-                            'inference_time': results['inference_time']
+                            'inference_time': results['inference_time'],
+                            'wait_time': wait_time
                         }
                         
                         st.session_state.browser_detection_history.append(detection_record)
@@ -566,8 +600,9 @@ def browser_camera_section(selected_model, confidence_threshold, queue_model_dat
         
         with col2:
             if st.button("🗑️ Clear Photo"):
-                # Force camera input to reset
-                st.session_state.clear()
+                # Clear current results
+                if 'browser_detection_results' in st.session_state:
+                    del st.session_state.browser_detection_results
                 st.rerun()
     
     # Show detection results if available
@@ -599,92 +634,21 @@ def browser_camera_section(selected_model, confidence_threshold, queue_model_dat
         
         # Wait time prediction
         if estimate_wait_time and results['people_count'] > 0:
-            # ML prediction
-            ml_wait_time = None
-            if use_ml_prediction and queue_model_data:
-                ml_wait_time = predict_checkin_wait_time(
-                    queue_size=results['people_count'],
-                    hour_of_day=current_hour,
-                    model_data=queue_model_data
-                )
+            wait_time = st.session_state.last_browser_detection['wait_time']
             
-            # Simple fallback calculation
-            simple_wait_time = (results['people_count'] * 3) / 3  # minutes
-            
-            # Determine which wait time to display
-            display_wait_time = float(ml_wait_time) if ml_wait_time is not None else simple_wait_time
-            
-            # Show wait time with color coding
-            if display_wait_time < 15:
-                st.success(f"✅ **Short wait: {display_wait_time:.0f} minutes**")
-            elif display_wait_time < 45:
-                st.warning(f"⚠️ **Moderate wait: {display_wait_time:.0f} minutes**")
-            else:
-                st.error(f"🚨 **Long wait: {display_wait_time:.0f} minutes**")
-            
-            # Show additional info
-            st.info(f"📊 Queue: {results['people_count']} people | 🕐 Time: {current_hour}:00")
-    
-    # Detection history for browser camera
-    if len(st.session_state.browser_detection_history) > 1:
-        st.markdown("---")
-        st.subheader("📈 Browser Detection History")
-        
-        # Create simple line chart
-        try:
-            import plotly.graph_objects as go
-            
-            times = [
-                datetime.fromtimestamp(d['timestamp']).strftime('%H:%M:%S') 
-                for d in st.session_state.browser_detection_history
-            ]
-            counts = [d['people_count'] for d in st.session_state.browser_detection_history]
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=times,
-                y=counts,
-                mode='lines+markers',
-                name='People Count',
-                line=dict(color='#1f77b4', width=3),
-                marker=dict(size=8)
-            ))
-            
-            fig.update_layout(
-                title=f"Browser Detection History ({len(st.session_state.browser_detection_history)} captures)",
-                xaxis_title="Time",
-                yaxis_title="Number of People",
-                height=400,
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        except ImportError:
-            st.info("📊 Install plotly for detection history charts")
-        
-        # Recent detections table
-        if st.expander("📊 Recent Browser Detections", expanded=False):
-            recent_detections = []
-            for detection in reversed(st.session_state.browser_detection_history[-10:]):
-                wait_time_str = f"{detection['wait_time']:.0f} min" if detection['wait_time'] is not None else "N/A"
-                recent_detections.append({
-                    'Time': datetime.fromtimestamp(detection['timestamp']).strftime('%H:%M:%S'),
-                    'People': detection['people_count'],
-                    'Wait Time': wait_time_str,
-                    'Model': detection['model'],
-                    'Confidence': detection['confidence'],
-                    'Inference (s)': f"{detection['inference_time']:.2f}"
-                })
-            
-            st.dataframe(recent_detections, use_container_width=True)
-            
-            # Clear history button
-            if st.button("🗑️ Clear Browser History", key="clear_browser_history"):
-                st.session_state.browser_detection_history = []
-                st.success("✅ Browser detection history cleared!")
-                st.rerun()
+            if wait_time is not None:
+                # Show wait time with color coding
+                if wait_time < 15:
+                    st.success(f"✅ **Short wait: {wait_time:.0f} minutes**")
+                elif wait_time < 45:
+                    st.warning(f"⚠️ **Moderate wait: {wait_time:.0f} minutes**")
+                else:
+                    st.error(f"🚨 **Long wait: {wait_time:.0f} minutes**")
+                
+                # Show additional info
+                st.info(f"📊 Queue: {results['people_count']} people | 🕐 Time: {current_hour}:00")
 
-# Local live video section (same as before but simplified)
+# Local live video section (only for truly local environments)
 def local_live_video_section(selected_model, confidence_threshold, queue_model_data, current_hour, estimate_wait_time, use_ml_prediction):
     """Local live video detection section"""
     
@@ -739,7 +703,7 @@ def local_live_video_section(selected_model, confidence_threshold, queue_model_d
         else:
             st.info("⚪ Camera Off")
     
-    # Main video display and detection (same logic as before)
+    # Main video display and detection
     if st.session_state.camera_active:
         video_col, info_col = st.columns([2, 1])
         
@@ -817,24 +781,13 @@ def local_live_video_section(selected_model, confidence_threshold, queue_model_d
                                 st.info(f"⚡ {detection_results['inference_time']:.2f}s | 🎯 {selected_model}")
                                 
                                 # Wait time prediction
-                                if estimate_wait_time and detection_results['people_count'] > 0:
-                                    ml_wait_time = None
-                                    if use_ml_prediction and queue_model_data:
-                                        ml_wait_time = predict_checkin_wait_time(
-                                            queue_size=detection_results['people_count'],
-                                            hour_of_day=current_hour,
-                                            model_data=queue_model_data
-                                        )
-                                    
-                                    simple_wait_time = (detection_results['people_count'] * 3) / 3
-                                    display_wait_time = float(ml_wait_time) if ml_wait_time is not None else simple_wait_time
-                                    
-                                    if display_wait_time < 15:
-                                        st.success(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
-                                    elif display_wait_time < 45:
-                                        st.warning(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
+                                if wait_time is not None:
+                                    if wait_time < 15:
+                                        st.success(f"⏱️ **Wait time: {wait_time:.0f} minutes**")
+                                    elif wait_time < 45:
+                                        st.warning(f"⏱️ **Wait time: {wait_time:.0f} minutes**")
                                     else:
-                                        st.error(f"⏱️ **Wait time: {display_wait_time:.0f} minutes**")
+                                        st.error(f"⏱️ **Wait time: {wait_time:.0f} minutes**")
                         else:
                             with detection_placeholder.container():
                                 st.error("❌ Detection failed")
@@ -881,13 +834,13 @@ def main():
     st.markdown('<h1 class="main-header">✈️ Airport Check-in Queue Detection System</h1>', unsafe_allow_html=True)
     st.markdown("**Designed for initial check-in queues outside the airport**")
     
-    # Check if running locally or deployed
+    # FIXED: Better environment detection and feedback
     is_local = is_local_environment()
     
     if is_local:
         st.success("🖥️ **Local Mode**: Full live camera support enabled")
     else:
-        st.info("🌐 **Deployed Mode**: Using browser camera capture")
+        st.info("🌐 **Deployed Mode**: Using secure browser camera capture")
     
     st.markdown("---")
     
@@ -974,7 +927,7 @@ def main():
     with col1:
         st.header("📹 Camera Detection")
         
-        # Choose between local live video or browser camera based on environment
+        # FIXED: Choose between local live video or browser camera based on environment
         if is_local:
             local_live_video_section(
                 selected_model, confidence_threshold, queue_model_data, 
@@ -1046,7 +999,7 @@ def main():
                 st.metric("🚀 FPS", f"{1/results['inference_time']:.1f}")
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # Wait time estimation (same as before)
+            # Wait time estimation
             if estimate_wait_time and results['people_count'] > 0:
                 ml_wait_time = None
                 if use_ml_prediction and queue_model_data:
@@ -1083,7 +1036,7 @@ def main():
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # Detection details (same as before)
+            # Detection details
             if show_details and results['detections']:
                 st.subheader("🔍 Detection Details")
                 
