@@ -807,8 +807,9 @@ def main():
     # Detection Settings
     detection_interval = st.sidebar.selectbox(
         "Detection Interval (seconds)",
-        [5, 8, 10, 15, 20],
-        index=2
+        [1, 3, 5, 8, 10, 15, 20],
+        index=2,
+        help="How often to run people detection (shorter = more real-time, more CPU usage)"
     )
     st.session_state.detection_interval = detection_interval
     
