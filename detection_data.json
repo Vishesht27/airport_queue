@@ -1,7 +1,7 @@
 {
-  "people_count": 1,
-  "wait_time": 2.0,
-  "model": "RT-DETR-X",
-  "timestamp": 1756285980.772518,
-  "last_updated": "2025-08-27 14:43:00"
+  "people_count": 3,
+  "wait_time": 3.500326156616211,
+  "model": "YOLOv8m",
+  "timestamp": 1756479632.498316,
+  "last_updated": "2025-08-29 20:30:32"
 }

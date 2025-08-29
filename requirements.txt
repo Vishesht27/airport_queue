@@ -12,5 +12,4 @@ scikit-learn
 pandas
 xgboost
 plotly
-streamlit-webrtc
 av

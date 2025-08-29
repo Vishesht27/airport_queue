@@ -494,6 +494,9 @@ class IPCameraStream:
             
             self.stream_url = stream_url
             
+            print(f"🔗 DEBUG: Attempting to connect to: {stream_url}")
+            print(f"🔗 DEBUG: Stream type: {stream_type}")
+            
             # Try to connect
             self.cap = cv2.VideoCapture(stream_url)
             
@@ -502,17 +505,33 @@ class IPCameraStream:
             
             # Set timeout properties if supported
             try:
-                self.cap.set(cv2.CAP_PROP_TIMEOUT, 5000)  # 5 second timeout
-            except:
+                self.cap.set(cv2.CAP_PROP_TIMEOUT, 10000)  # 10 second timeout for HTTP
+                print("🔗 DEBUG: Timeout set to 10 seconds")
+            except Exception as timeout_err:
+                print(f"🔗 DEBUG: Could not set timeout: {timeout_err}")
                 pass
             
+            print("🔗 DEBUG: Checking if camera opened...")
             if not self.cap.isOpened():
+                print("🔗 DEBUG: Camera failed to open")
                 raise Exception("Could not connect to stream")
             
-            # Test read a frame
-            ret, frame = self.cap.read()
-            if not ret:
-                raise Exception("Could not read from stream")
+            print("🔗 DEBUG: Camera opened successfully, testing frame read...")
+            
+            # Test read a frame with multiple attempts
+            for attempt in range(3):
+                print(f"🔗 DEBUG: Frame read attempt {attempt + 1}/3")
+                ret, frame = self.cap.read()
+                if ret and frame is not None:
+                    print(f"🔗 DEBUG: Frame read successful! Frame shape: {frame.shape}")
+                    break
+                else:
+                    print(f"🔗 DEBUG: Frame read failed on attempt {attempt + 1}")
+                    time.sleep(1)
+            
+            if not ret or frame is None:
+                print("🔗 DEBUG: All frame read attempts failed")
+                raise Exception("Could not read from stream after 3 attempts")
             
             self.is_running = True
             
@@ -520,9 +539,11 @@ class IPCameraStream:
             self.capture_thread = threading.Thread(target=self._capture_frames, daemon=True)
             self.capture_thread.start()
             
+            print("🔗 DEBUG: Connection successful, capture thread started")
             return True, "Connected successfully"
             
         except Exception as e:
+            print(f"🔗 DEBUG: Connection error: {str(e)}")
             self.stop_stream()
             return False, f"Connection failed: {str(e)}"
     
@@ -582,10 +603,14 @@ class IPCameraStream:
         """Check if stream is connected"""
         return self.is_running and self.cap and self.cap.isOpened()
 
-def build_stream_url(connection_type, ip_address, port, username, password, channel=1, stream_type="main"):
-    """Build stream URL based on connection type"""
+def build_stream_url(connection_type, ip_address, port, username, password, channel=1, stream_type="main", camera_brand="Generic"):
+    """Build stream URL based on connection type and camera brand"""
     
-    if connection_type == "NVR":
+    if connection_type == "Custom URL":
+        # This will be handled separately
+        return None
+    
+    elif connection_type == "NVR":
         # Common NVR RTSP formats
         if stream_type == "main":
             # Main stream (high quality)
@@ -595,15 +620,53 @@ def build_stream_url(connection_type, ip_address, port, username, password, chan
             return f"rtsp://{username}:{password}@{ip_address}:{port}/cam/realmonitor?channel={channel}&subtype=1"
     
     elif connection_type == "Direct Camera":
-        # Direct camera RTSP
-        if stream_type == "main":
-            return f"rtsp://{username}:{password}@{ip_address}:{port}/stream1"
-        else:
-            return f"rtsp://{username}:{password}@{ip_address}:{port}/stream2"
+        # Brand-specific RTSP URLs
+        if camera_brand == "Pelco":
+            if stream_type == "main":
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/rtsp/defaultPrimary?streamType=u"
+            else:
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/rtsp/defaultSecondary?streamType=u"
+        
+        elif camera_brand == "Hikvision":
+            if stream_type == "main":
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/Streaming/Channels/101/httppreview"
+            else:
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/Streaming/Channels/102/httppreview"
+        
+        elif camera_brand == "Dahua":
+            if stream_type == "main":
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/cam/realmonitor?channel=1&subtype=0"
+            else:
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/cam/realmonitor?channel=1&subtype=1"
+        
+        elif camera_brand == "Axis":
+            if stream_type == "main":
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/axis-media/media.amp?videocodec=h264"
+            else:
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/axis-media/media.amp?resolution=320x240"
+        
+        else:  # Generic
+            if stream_type == "main":
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/stream1"
+            else:
+                return f"rtsp://{username}:{password}@{ip_address}:{port}/stream2"
     
     elif connection_type == "HTTP Stream":
-        # HTTP/MJPEG stream
-        return f"http://{username}:{password}@{ip_address}:{port}/video.cgi"
+        # Brand-specific HTTP/MJPEG URLs
+        if camera_brand == "Pelco":
+            return f"http://{username}:{password}@{ip_address}:{port}/media/cam0/still.jpg"
+        
+        elif camera_brand == "Hikvision":
+            return f"http://{username}:{password}@{ip_address}:{port}/ISAPI/Streaming/channels/101/picture"
+        
+        elif camera_brand == "Dahua":
+            return f"http://{username}:{password}@{ip_address}:{port}/cgi-bin/mjpg/video.cgi"
+        
+        elif camera_brand == "Axis":
+            return f"http://{username}:{password}@{ip_address}:{port}/axis-cgi/mjpg/video.cgi"
+        
+        else:  # Generic
+            return f"http://{username}:{password}@{ip_address}:{port}/video.cgi"
     
     return None
 
@@ -638,45 +701,76 @@ def main():
     # Connection Type
     connection_type = st.sidebar.selectbox(
         "Connection Type",
-        ["NVR", "Direct Camera", "HTTP Stream"],
+        ["NVR", "Direct Camera", "HTTP Stream", "Custom URL"],
         help="Choose how to connect to your camera"
     )
     
     # Connection Details
     st.sidebar.subheader("Connection Details")
     
-    # Pre-fill with your NVR IP
-    default_ip = "192.168.1.165"
-    ip_address = st.sidebar.text_input("IP Address", value=default_ip)
-    
-    # Port selection based on connection type
-    if connection_type == "NVR":
-        default_port = 554
-        port_help = "RTSP port (usually 554)"
-    elif connection_type == "Direct Camera":
-        default_port = 554
-        port_help = "RTSP port (usually 554)"
-    else:  # HTTP Stream
-        default_port = 80
-        port_help = "HTTP port (usually 80)"
-    
-    port = st.sidebar.number_input("Port", value=default_port, min_value=1, max_value=65535, help=port_help)
-    
-    # Authentication
-    username = st.sidebar.text_input("Username", value="admin")
-    password = st.sidebar.text_input("Password", type="password", value="")
-    
-    # Additional options for NVR
-    if connection_type == "NVR":
-        channel = st.sidebar.number_input("Camera Channel", value=1, min_value=1, max_value=32, help="NVR camera channel number")
-        stream_quality = st.sidebar.selectbox(
-            "Stream Quality",
-            ["sub", "main"],
-            help="Sub-stream: Lower quality, better for detection. Main-stream: Higher quality"
+    if connection_type == "Custom URL":
+        # Custom URL input
+        custom_url = st.sidebar.text_area(
+            "Stream URL",
+            value="rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u",
+            help="Enter the complete stream URL (RTSP or HTTP)"
         )
-    else:
+        
+        # Extract credentials for display (optional)
+        st.sidebar.info("💡 Enter the complete URL with credentials")
+        st.sidebar.markdown("**Examples:**")
+        st.sidebar.code("rtsp://user:pass@ip:554/path")
+        st.sidebar.code("http://user:pass@ip:80/path")
+        
+        # Set dummy values for compatibility
+        ip_address = "custom"
+        port = 554
+        username = "custom"
+        password = "custom"
         channel = 1
         stream_quality = "main"
+        
+    else:
+        # Standard connection details
+        # Pre-fill with your NVR IP
+        default_ip = "192.168.1.165" if connection_type == "NVR" else "192.168.1.125"
+        ip_address = st.sidebar.text_input("IP Address", value=default_ip)
+        
+        # Port selection based on connection type
+        if connection_type == "NVR":
+            default_port = 554
+            port_help = "RTSP port (usually 554)"
+        elif connection_type == "Direct Camera":
+            default_port = 554
+            port_help = "RTSP port (usually 554)"
+        else:  # HTTP Stream
+            default_port = 80
+            port_help = "HTTP port (usually 80)"
+        
+        port = st.sidebar.number_input("Port", value=default_port, min_value=1, max_value=65535, help=port_help)
+        
+        # Authentication
+        username = st.sidebar.text_input("Username", value="admin")
+        password = st.sidebar.text_input("Password", type="password", value="")
+        
+        # Camera brand selection for smart URL building
+        camera_brand = st.sidebar.selectbox(
+            "Camera Brand",
+            ["Generic", "Pelco", "Hikvision", "Dahua", "Axis"],
+            help="Select your camera brand for optimized URL format"
+        )
+        
+        # Additional options for NVR
+        if connection_type == "NVR":
+            channel = st.sidebar.number_input("Camera Channel", value=1, min_value=1, max_value=32, help="NVR camera channel number")
+            stream_quality = st.sidebar.selectbox(
+                "Stream Quality",
+                ["sub", "main"],
+                help="Sub-stream: Lower quality, better for detection. Main-stream: Higher quality"
+            )
+        else:
+            channel = 1
+            stream_quality = "main"
     
     # Model Configuration
     st.sidebar.header("🤖 Detection Settings")
@@ -833,10 +927,18 @@ def main():
     st.sidebar.header("🔌 Connection Control")
     
     # Build stream URL
-    stream_url = build_stream_url(connection_type, ip_address, port, username, password, channel, stream_quality)
-    
-    if stream_url:
+    if connection_type == "Custom URL":
+        stream_url = custom_url
         st.sidebar.code(stream_url, language="text")
+    else:
+        stream_url = build_stream_url(connection_type, ip_address, port, username, password, channel, stream_quality, camera_brand)
+        
+        if stream_url:
+            st.sidebar.code(stream_url, language="text")
+            
+            # Show brand-specific info
+            if camera_brand != "Generic":
+                st.sidebar.success(f"✅ Using {camera_brand} optimized URL")
     
     # Connect/Disconnect buttons
     col1, col2 = st.sidebar.columns(2)
