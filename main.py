@@ -23,6 +23,9 @@ import queue
 import os
 import random
 
+# Import configuration manager
+from config_manager import ConfigManager
+
 # Import model libraries
 try:
     from ultralytics import YOLO, RTDETR
@@ -701,6 +704,19 @@ def main():
     st.markdown("**Live detection from NVR or Direct IP Camera**")
     st.markdown("---")
     
+    # Initialize configuration manager
+    if 'config_manager' not in st.session_state:
+        st.session_state.config_manager = ConfigManager()
+        # Load configuration on first run
+        config = st.session_state.config_manager.load_config()
+        st.session_state.config_manager.update_session_state_from_config(config)
+        st.session_state.config_loaded = True
+        
+        # Show welcome message if config exists
+        if st.session_state.config_manager.config_exists():
+            st.success("✅ Configuration loaded successfully!")
+            st.info(f"📋 Connection: {st.session_state.config_manager.get_connection_summary(config)}")
+    
     # Initialize components
     if 'model_manager' not in st.session_state:
         st.session_state.model_manager = ModelManager()
@@ -719,13 +735,91 @@ def main():
     queue_model_data = load_queue_model()
     
     # Sidebar Configuration
+    st.sidebar.header("⚙️ Configuration Management")
+    
+    # Quick connect section
+    config_col1, config_col2 = st.sidebar.columns(2)
+    
+    with config_col1:
+        if st.button("🚀 Quick Connect", type="primary", help="Connect using saved settings"):
+            if st.session_state.config_manager.config_exists():
+                # Use saved configuration values
+                config = st.session_state.config_manager.load_config()
+                conn = config.get("connection", {})
+                
+                if conn.get("connection_type") == "Custom URL":
+                    stream_url = conn.get("custom_url", "")
+                else:
+                    stream_url = build_stream_url(
+                        conn.get("connection_type", "NVR"),
+                        conn.get("ip_address", "192.168.1.165"),
+                        conn.get("port", 554),
+                        conn.get("username", "admin"),
+                        conn.get("password", ""),
+                        conn.get("channel", 1),
+                        conn.get("stream_quality", "sub"),
+                        conn.get("camera_brand", "Generic")
+                    )
+                
+                if stream_url and conn.get("username") and conn.get("password"):
+                    with st.spinner("Quick connecting..."):
+                        success, message = st.session_state.ip_stream.connect_to_stream(stream_url)
+                        if success:
+                            st.session_state.stream_connected = True
+                            st.success(f"✅ {message}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+                else:
+                    st.error("❌ Incomplete saved configuration")
+            else:
+                st.error("❌ No saved configuration found")
+    
+    with config_col2:
+        if st.button("💾 Save Config", help="Save current settings"):
+            config = st.session_state.config_manager.collect_config_from_session_state()
+            if st.session_state.config_manager.save_config(config):
+                st.success("✅ Configuration saved!")
+            else:
+                st.error("❌ Failed to save configuration")
+    
+    # Configuration status
+    if st.session_state.config_manager.config_exists():
+        config = st.session_state.config_manager.load_config()
+        st.sidebar.success(f"📋 Config: {st.session_state.config_manager.get_connection_summary(config)}")
+        
+        # Additional config management buttons
+        config_mgmt_col1, config_mgmt_col2 = st.sidebar.columns(2)
+        
+        with config_mgmt_col1:
+            if st.button("🔄 Reload", help="Reload saved configuration"):
+                config = st.session_state.config_manager.load_config()
+                st.session_state.config_manager.update_session_state_from_config(config)
+                st.success("✅ Configuration reloaded!")
+                st.rerun()
+        
+        with config_mgmt_col2:
+            if st.button("🗑️ Reset", help="Delete saved configuration"):
+                if st.session_state.config_manager.delete_config():
+                    st.success("✅ Configuration deleted!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to delete configuration")
+    else:
+        st.sidebar.info("💡 No saved configuration. Settings will be saved automatically when you click 'Save Config'.")
+    
+    st.sidebar.markdown("---")
     st.sidebar.header("📹 Camera Configuration")
     
     # Connection Type
     connection_type = st.sidebar.selectbox(
         "Connection Type",
         ["NVR", "Direct Camera", "HTTP Stream", "Custom URL"],
-        help="Choose how to connect to your camera"
+        index=["NVR", "Direct Camera", "HTTP Stream", "Custom URL"].index(
+            getattr(st.session_state, 'connection_type', 'NVR')
+        ),
+        help="Choose how to connect to your camera",
+        key='connection_type'
     )
     
     # Connection Details
@@ -735,8 +829,9 @@ def main():
         # Custom URL input
         custom_url = st.sidebar.text_area(
             "Stream URL",
-            value="rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u",
-            help="Enter the complete stream URL (RTSP or HTTP)"
+            value=getattr(st.session_state, 'custom_url', "rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u"),
+            help="Enter the complete stream URL (RTSP or HTTP)",
+            key='custom_url'
         )
         
         # Extract credentials for display (optional)
@@ -755,9 +850,9 @@ def main():
         
     else:
         # Standard connection details
-        # Pre-fill with your NVR IP
-        default_ip = "192.168.1.165" if connection_type == "NVR" else "192.168.1.125"
-        ip_address = st.sidebar.text_input("IP Address", value=default_ip)
+        # Pre-fill with saved values or defaults
+        default_ip = getattr(st.session_state, 'ip_address', "192.168.1.165" if connection_type == "NVR" else "192.168.1.125")
+        ip_address = st.sidebar.text_input("IP Address", value=default_ip, key='ip_address')
         
         # Port selection based on connection type
         if connection_type == "NVR":
@@ -770,26 +865,42 @@ def main():
             default_port = 80
             port_help = "HTTP port (usually 80)"
         
-        port = st.sidebar.number_input("Port", value=default_port, min_value=1, max_value=65535, help=port_help)
+        saved_port = getattr(st.session_state, 'port', default_port)
+        port = st.sidebar.number_input("Port", value=saved_port, min_value=1, max_value=65535, help=port_help, key='port')
         
         # Authentication
-        username = st.sidebar.text_input("Username", value="admin")
-        password = st.sidebar.text_input("Password", type="password", value="")
+        username = st.sidebar.text_input("Username", value=getattr(st.session_state, 'username', "admin"), key='username')
+        password = st.sidebar.text_input("Password", type="password", value=getattr(st.session_state, 'password', ""), key='password')
         
         # Camera brand selection for smart URL building
         camera_brand = st.sidebar.selectbox(
             "Camera Brand",
             ["Generic", "Pelco", "Hikvision", "Dahua", "Axis"],
-            help="Select your camera brand for optimized URL format"
+            index=["Generic", "Pelco", "Hikvision", "Dahua", "Axis"].index(
+                getattr(st.session_state, 'camera_brand', 'Generic')
+            ),
+            help="Select your camera brand for optimized URL format",
+            key='camera_brand'
         )
         
         # Additional options for NVR
         if connection_type == "NVR":
-            channel = st.sidebar.number_input("Camera Channel", value=1, min_value=1, max_value=32, help="NVR camera channel number")
+            channel = st.sidebar.number_input(
+                "Camera Channel", 
+                value=getattr(st.session_state, 'channel', 1), 
+                min_value=1, 
+                max_value=32, 
+                help="NVR camera channel number",
+                key='channel'
+            )
             stream_quality = st.sidebar.selectbox(
                 "Stream Quality",
                 ["sub", "main"],
-                help="Sub-stream: Lower quality, better for detection. Main-stream: Higher quality"
+                index=["sub", "main"].index(
+                    getattr(st.session_state, 'stream_quality', 'sub')
+                ),
+                help="Sub-stream: Lower quality, better for detection. Main-stream: Higher quality",
+                key='stream_quality'
             )
         else:
             channel = 1
@@ -803,15 +914,36 @@ def main():
         st.sidebar.error("❌ No detection models available")
         return
     
-    selected_model = st.sidebar.selectbox("🎯 Detection Model", available_models)
-    confidence_threshold = st.sidebar.slider("🎚️ Confidence Threshold", 0.1, 0.9, 0.5, 0.1)
+    # Get saved model or use first available
+    saved_model = getattr(st.session_state, 'selected_model', available_models[0])
+    if saved_model not in available_models:
+        saved_model = available_models[0]
+    
+    selected_model = st.sidebar.selectbox(
+        "🎯 Detection Model", 
+        available_models,
+        index=available_models.index(saved_model),
+        key='selected_model'
+    )
+    confidence_threshold = st.sidebar.slider(
+        "🎚️ Confidence Threshold", 
+        0.1, 0.9, 
+        getattr(st.session_state, 'confidence_threshold', 0.5), 
+        0.1,
+        key='confidence_threshold'
+    )
     
     # Image quality selection
+    quality_options = ["Smaller (Fast Processing)", "Medium (Balanced)", "Original (Best Quality)"]
+    saved_quality = getattr(st.session_state, 'image_quality', "Medium (Balanced)")
+    quality_index = quality_options.index(saved_quality) if saved_quality in quality_options else 1
+    
     image_quality = st.sidebar.radio(
         "📏 Image Quality",
-        ["Smaller (Fast Processing)", "Medium (Balanced)", "Original (Best Quality)"],
-        index=1,
-        help="Choose processing speed vs accuracy trade-off"
+        quality_options,
+        index=quality_index,
+        help="Choose processing speed vs accuracy trade-off",
+        key='image_quality'
     )
     
     # Show current settings
@@ -828,11 +960,16 @@ def main():
         st.sidebar.markdown(f"**Description:** {model_info['description']}")
     
     # Detection Settings
+    interval_options = [1, 3, 5, 8, 10, 15, 20]
+    saved_interval = getattr(st.session_state, 'detection_interval', 5)
+    interval_index = interval_options.index(saved_interval) if saved_interval in interval_options else 2
+    
     detection_interval = st.sidebar.selectbox(
         "Detection Interval (seconds)",
-        [1, 3, 5, 8, 10, 15, 20],
-        index=2,
-        help="How often to run people detection (shorter = more real-time, more CPU usage)"
+        interval_options,
+        index=interval_index,
+        help="How often to run people detection (shorter = more real-time, more CPU usage)",
+        key='detection_interval'
     )
     st.session_state.detection_interval = detection_interval
     
@@ -840,11 +977,16 @@ def main():
     st.sidebar.header("⏱️ Wait Time Calculation")
     
     # Simple wait time method selection
+    wait_time_options = ["Smart AI Prediction (Recommended)", "Custom AI"]
+    saved_wait_method = getattr(st.session_state, 'wait_time_method', "Smart AI Prediction (Recommended)")
+    wait_method_index = wait_time_options.index(saved_wait_method) if saved_wait_method in wait_time_options else 0
+    
     wait_time_method = st.sidebar.radio(
         "📊 How to calculate wait time?",
-        ["Smart AI Prediction (Recommended)", "Custom AI"],
-        index=0,
-        help="Choose how to estimate queue wait times"
+        wait_time_options,
+        index=wait_method_index,
+        help="Choose how to estimate queue wait times",
+        key='wait_time_method'
     )
     
     # Always estimate wait time now
@@ -854,14 +996,24 @@ def main():
         use_ml_prediction = True
         
         # Time of day setting
+        time_options = ["Auto-detect current time", "Set manually"]
+        saved_time_setting = getattr(st.session_state, 'time_setting', "Auto-detect current time")
+        time_index = time_options.index(saved_time_setting) if saved_time_setting in time_options else 0
+        
         time_setting = st.sidebar.radio(
             "🕐 Time of day",
-            ["Auto-detect current time", "Set manually"],
-            index=0
+            time_options,
+            index=time_index,
+            key='time_setting'
         )
         
         if time_setting == "Set manually":
-            current_hour = st.sidebar.slider("Current hour (24h format)", 0, 23, datetime.now().hour)
+            current_hour = st.sidebar.slider(
+                "Current hour (24h format)", 
+                0, 23, 
+                getattr(st.session_state, 'current_hour', datetime.now().hour),
+                key='current_hour'
+            )
         else:
             current_hour = datetime.now().hour
             
@@ -888,21 +1040,37 @@ def main():
     
     # Display Settings
     st.sidebar.header("📺 Display Settings")
-    gate_name = st.sidebar.text_input("Gate Name", value="GATE", help="Name to display (e.g., GATE, TERMINAL, CHECKPOINT)")
-    gate_number = st.sidebar.text_input("Gate Number", value="02", help="Gate number to display")
+    gate_name = st.sidebar.text_input(
+        "Gate Name", 
+        value=getattr(st.session_state, 'gate_name', "GATE"), 
+        help="Name to display (e.g., GATE, TERMINAL, CHECKPOINT)",
+        key='gate_name'
+    )
+    gate_number = st.sidebar.text_input(
+        "Gate Number", 
+        value=getattr(st.session_state, 'gate_number', "02"), 
+        help="Gate number to display",
+        key='gate_number'
+    )
     
     # People Count Adjustment
     st.sidebar.subheader("👥 People Count Adjustment")
-    enable_people_adjustment = st.sidebar.checkbox("Enable people count adjustment", value=False, help="Add/subtract people from detected count")
+    enable_people_adjustment = st.sidebar.checkbox(
+        "Enable people count adjustment", 
+        value=getattr(st.session_state, 'enable_people_adjustment', False), 
+        help="Add/subtract people from detected count",
+        key='enable_people_adjustment'
+    )
     
     if enable_people_adjustment:
         people_adjustment = st.sidebar.slider(
             "Adjust detected count",
             min_value=-20,
             max_value=20,
-            value=0,
+            value=getattr(st.session_state, 'people_adjustment', 0),
             step=1,
-            help="Add (+) or subtract (-) people from detected count before calculations"
+            help="Add (+) or subtract (-) people from detected count before calculations",
+            key='people_adjustment'
         )
         
         if people_adjustment > 0:
@@ -916,11 +1084,16 @@ def main():
     
     # Theme Settings
     st.sidebar.subheader("🎨 Display Theme")
+    theme_options = ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"]
+    saved_theme = getattr(st.session_state, 'theme_option', "Dark (Airport Standard)")
+    theme_index = theme_options.index(saved_theme) if saved_theme in theme_options else 0
+    
     theme_option = st.sidebar.selectbox(
         "Theme",
-        ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"],
-        index=0,
-        help="Select display theme for different lighting conditions"
+        theme_options,
+        index=theme_index,
+        help="Select display theme for different lighting conditions",
+        key='theme_option'
     )
     
     # Font Settings
@@ -929,24 +1102,31 @@ def main():
         "Font Size",
         min_value=0.5,
         max_value=2.0,
-        value=1.0,
+        value=getattr(st.session_state, 'font_size_multiplier', 1.0),
         step=0.1,
-        help="Adjust font size (1.0 = normal, 2.0 = double size)"
+        help="Adjust font size (1.0 = normal, 2.0 = double size)",
+        key='font_size_multiplier'
     )
+    
+    font_weight_options = ["Normal", "Bold", "Extra Bold"]
+    saved_weight = getattr(st.session_state, 'font_weight', "Bold")
+    weight_index = font_weight_options.index(saved_weight) if saved_weight in font_weight_options else 1
     
     font_weight = st.sidebar.selectbox(
         "Font Weight",
-        ["Normal", "Bold", "Extra Bold"],
-        index=1,
-        help="Text thickness"
+        font_weight_options,
+        index=weight_index,
+        help="Text thickness",
+        key='font_weight'
     )
     
     # Color Settings
     st.sidebar.subheader("🌈 Color Settings")
     accent_color = st.sidebar.color_picker(
         "Accent Color",
-        value="#1f77b4",
-        help="Color for gate name and highlights"
+        value=getattr(st.session_state, 'accent_color', "#1f77b4"),
+        help="Color for gate name and highlights",
+        key='accent_color'
     )
     
     # Font and Color Settings for Display Parameters
@@ -954,68 +1134,81 @@ def main():
     
     # People in Queue Text Settings
     st.sidebar.markdown("**People in Queue Label:**")
+    font_options = ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"]
+    saved_people_label_font = getattr(st.session_state, 'people_label_font', "Arial")
+    people_label_font_index = font_options.index(saved_people_label_font) if saved_people_label_font in font_options else 0
+    
     people_label_font = st.sidebar.selectbox(
         "Font Family",
-        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
-        index=0,
+        font_options,
+        index=people_label_font_index,
         key="people_label_font",
         help="Font for 'PEOPLE IN QUEUE' text"
     )
     
     people_label_color = st.sidebar.color_picker(
         "Text Color",
-        value="#ffffff",
+        value=getattr(st.session_state, 'people_label_color', "#ffffff"),
         key="people_label_color",
         help="Color for 'PEOPLE IN QUEUE' text"
     )
     
     # People Count Value Settings
     st.sidebar.markdown("**People Count Number:**")
+    saved_people_count_font = getattr(st.session_state, 'people_count_font', "Arial")
+    people_count_font_index = font_options.index(saved_people_count_font) if saved_people_count_font in font_options else 0
+    
     people_count_font = st.sidebar.selectbox(
         "Font Family",
-        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
-        index=0,
+        font_options,
+        index=people_count_font_index,
         key="people_count_font",
         help="Font for people count number"
     )
     
     people_count_color = st.sidebar.color_picker(
         "Number Color",
-        value="#1f77b4",
+        value=getattr(st.session_state, 'people_count_color', "#1f77b4"),
         key="people_count_color",
         help="Color for people count number"
     )
     
     # Wait Time Text Settings
     st.sidebar.markdown("**Wait Time Label:**")
+    saved_wait_time_label_font = getattr(st.session_state, 'wait_time_label_font', "Arial")
+    wait_time_label_font_index = font_options.index(saved_wait_time_label_font) if saved_wait_time_label_font in font_options else 0
+    
     wait_time_label_font = st.sidebar.selectbox(
         "Font Family",
-        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
-        index=0,
+        font_options,
+        index=wait_time_label_font_index,
         key="wait_time_label_font",
         help="Font for 'WAIT TIME (in minutes)' text"
     )
     
     wait_time_label_color = st.sidebar.color_picker(
         "Text Color",
-        value="#ffffff",
+        value=getattr(st.session_state, 'wait_time_label_color', "#ffffff"),
         key="wait_time_label_color",
         help="Color for 'WAIT TIME (in minutes)' text"
     )
     
     # Wait Time Value Settings
     st.sidebar.markdown("**Wait Time Number:**")
+    saved_wait_time_value_font = getattr(st.session_state, 'wait_time_value_font', "Arial")
+    wait_time_value_font_index = font_options.index(saved_wait_time_value_font) if saved_wait_time_value_font in font_options else 0
+    
     wait_time_value_font = st.sidebar.selectbox(
         "Font Family",
-        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
-        index=0,
+        font_options,
+        index=wait_time_value_font_index,
         key="wait_time_value_font",
         help="Font for wait time number"
     )
     
     wait_time_value_color = st.sidebar.color_picker(
         "Number Color",
-        value="#dc3545",
+        value=getattr(st.session_state, 'wait_time_value_color', "#dc3545"),
         key="wait_time_value_color",
         help="Color for wait time number"
     )
@@ -1026,23 +1219,30 @@ def main():
         "Screen Brightness",
         min_value=0.3,
         max_value=1.0,
-        value=1.0,
+        value=getattr(st.session_state, 'brightness_level', 1.0),
         step=0.1,
-        help="Adjust overall display brightness"
+        help="Adjust overall display brightness",
+        key='brightness_level'
     )
     
     contrast_level = st.sidebar.slider(
         "Contrast Level",
         min_value=0.5,
         max_value=2.0,
-        value=1.0,
+        value=getattr(st.session_state, 'contrast_level', 1.0),
         step=0.1,
-        help="Adjust contrast for better visibility"
+        help="Adjust contrast for better visibility",
+        key='contrast_level'
     )
     
     # Cropping settings
     st.sidebar.header("✂️ Video Cropping")
-    enable_cropping = st.sidebar.checkbox("Enable live video cropping", value=False, help="Crop video feed to focus on specific queue area")
+    enable_cropping = st.sidebar.checkbox(
+        "Enable live video cropping", 
+        value=getattr(st.session_state, 'enable_cropping', False), 
+        help="Crop video feed to focus on specific queue area",
+        key='enable_cropping'
+    )
     
     if enable_cropping:
         st.sidebar.subheader("Crop Area")
