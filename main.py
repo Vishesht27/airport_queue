@@ -40,6 +40,16 @@ except ImportError:
 # Custom CSS
 st.markdown("""
 <style>
+    /* Hide Streamlit UI elements */
+    .stDeployButton {display: none !important;}
+    footer {visibility: hidden !important;}
+    header[data-testid="stHeader"] {display: none !important;}
+    .stToolbar {display: none !important;}
+    div[data-testid="stToolbar"] {display: none !important;}
+    div[data-testid="stDecoration"] {display: none !important;}
+    div[data-testid="stStatusWidget"] {display: none !important;}
+    #MainMenu {visibility: hidden !important;}
+    
     .main-header {
         font-size: 3rem;
         color: #1f77b4;
@@ -67,7 +77,7 @@ st.markdown("""
     .error-card {
         background-color: #f8d7da;
         padding: 1rem;
-        border-radius: git px;
+        border-radius: 10px;
         border-left: 5px solid #dc3545;
     }
 </style>
@@ -135,7 +145,7 @@ def predict_checkin_wait_time(queue_size, hour_of_day, model_data):
 
 def save_detection_data(people_count, wait_time, model_name, timestamp=None, gate_name="GATE", gate_number="02", 
                        theme_option="Dark (Airport Standard)", font_size_multiplier=1.0, font_weight="Bold",
-                       accent_color="#1f77b4", people_count_color="#1f77b4", brightness_level=1.0, contrast_level=1.0):
+                       accent_color="#1f77b4", display_text_color="#ffffff", brightness_level=1.0, contrast_level=1.0):
     """Save detection data and display settings to JSON file for display page"""
     if timestamp is None:
         timestamp = time.time()
@@ -158,7 +168,7 @@ def save_detection_data(people_count, wait_time, model_name, timestamp=None, gat
             'font_size_multiplier': float(font_size_multiplier),
             'font_weight': str(font_weight),
             'accent_color': str(accent_color),
-            'people_count_color': str(people_count_color),
+            'display_text_color': str(display_text_color),
             'brightness_level': float(brightness_level),
             'contrast_level': float(contrast_level)
         }
@@ -935,15 +945,15 @@ def main():
     # Color Settings
     st.sidebar.subheader("🌈 Color Settings")
     accent_color = st.sidebar.color_picker(
-        "Accent Color",
+        "Gate Name Color",
         value="#1f77b4",
-        help="Color for gate name and highlights"
+        help="Color for gate name display"
     )
     
-    people_count_color = st.sidebar.color_picker(
-        "People Count Color",
-        value="#1f77b4",
-        help="Color for people count display"
+    display_text_color = st.sidebar.color_picker(
+        "Text & Numbers Color",
+        value="#ffffff",
+        help="Color for all text and numbers (PEOPLE IN QUEUE, WAIT TIME, and their values)"
     )
     
     # Brightness Settings
@@ -1180,7 +1190,7 @@ def main():
                                 font_size_multiplier=font_size_multiplier,
                                 font_weight=font_weight,
                                 accent_color=accent_color,
-                                people_count_color=people_count_color,
+                                display_text_color=display_text_color,
                                 brightness_level=brightness_level,
                                 contrast_level=contrast_level
                             )

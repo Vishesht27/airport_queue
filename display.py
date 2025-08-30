@@ -30,10 +30,20 @@ st.markdown("""
         background-color: #0e1117 !important;
     }
     
-    /* Hide Streamlit elements */
-    .stDeployButton {display: none;}
-    footer {visibility: hidden;}
-    .stApp > header {visibility: hidden;}
+    /* Hide ALL Streamlit UI elements */
+    .stDeployButton {display: none !important;}
+    footer {visibility: hidden !important;}
+    .stApp > header {visibility: hidden !important;}
+    header[data-testid="stHeader"] {display: none !important;}
+    .stToolbar {display: none !important;}
+    .stActionButton {display: none !important;}
+    div[data-testid="stToolbar"] {display: none !important;}
+    div[data-testid="stDecoration"] {display: none !important;}
+    div[data-testid="stStatusWidget"] {display: none !important;}
+    #MainMenu {visibility: hidden !important;}
+    .stApp > div:first-child {display: none !important;}
+    .css-1rs6os {display: none !important;}
+    .css-17ziqus {display: none !important;}
     
     /* Full screen styling */
     .main .block-container {
@@ -50,6 +60,7 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
+        color: #ffffff !important;
     }
     
     .huge-text {
@@ -58,6 +69,7 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
+        color: #ffffff !important;
     }
     
     .medium-text {
@@ -65,6 +77,15 @@ st.markdown("""
         font-weight: bold !important;
         text-align: center !important;
         margin: 1rem 0 !important;
+        color: #ffffff !important;
+    }
+    
+    .gate-text {
+        font-size: 6rem !important;
+        font-weight: bold !important;
+        text-align: center !important;
+        margin: 0 !important;
+        color: #1f77b4 !important;
     }
     
     .status-text {
@@ -84,27 +105,31 @@ st.markdown("""
     /* Background colors for better contrast */
     .green-bg { 
         background-color: #d4edda !important; 
-        padding: 2rem !important;
-        border-radius: 20px !important;
-        margin: 1rem 0 !important;
+        padding: 1.5rem !important;
+        border-radius: 15px !important;
+        margin: 0.5rem 0 !important;
+        border-top: 3px solid #28a745 !important;
     }
     .yellow-bg { 
         background-color: #fff3cd !important; 
-        padding: 2rem !important;
-        border-radius: 20px !important;
-        margin: 1rem 0 !important;
+        padding: 1.5rem !important;
+        border-radius: 15px !important;
+        margin: 0.5rem 0 !important;
+        border-top: 3px solid #ffc107 !important;
     }
     .red-bg { 
         background-color: #f8d7da !important; 
-        padding: 2rem !important;
-        border-radius: 20px !important;
-        margin: 1rem 0 !important;
+        padding: 1.5rem !important;
+        border-radius: 15px !important;
+        margin: 0.5rem 0 !important;
+        border-top: 3px solid #dc3545 !important;
     }
     .blue-bg { 
         background-color: #d1ecf1 !important; 
-        padding: 2rem !important;
-        border-radius: 20px !important;
-        margin: 1rem 0 !important;
+        padding: 1.5rem !important;
+        border-radius: 15px !important;
+        margin: 0.5rem 0 !important;
+        border-top: 3px solid #1f77b4 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -172,7 +197,7 @@ def main():
         'font_size_multiplier': 1.0,
         'font_weight': 'Bold',
         'accent_color': '#1f77b4',
-        'people_count_color': '#1f77b4',
+        'display_text_color': '#ffffff',
         'brightness_level': 1.0,
         'contrast_level': 1.0
     }
@@ -206,7 +231,7 @@ def main():
     font_size_multiplier = display_settings.get('font_size_multiplier', 1.0)
     font_weight = display_settings.get('font_weight', 'Bold')
     accent_color = display_settings.get('accent_color', '#1f77b4')
-    people_count_color = display_settings.get('people_count_color', '#1f77b4')
+    display_text_color = display_settings.get('display_text_color', '#ffffff')
     brightness_level = display_settings.get('brightness_level', 1.0)
     contrast_level = display_settings.get('contrast_level', 1.0)
     
@@ -231,58 +256,73 @@ def main():
         "Extra Bold": "900"
     }.get(font_weight, "700")
     
-    # Calculate font sizes based on multiplier
-    gate_font_size = 6 * font_size_multiplier
+    # Calculate font sizes based on multiplier - keep gate large
+    gate_font_size = 6 * font_size_multiplier  # Keep original gate size
     huge_font_size = 15 * font_size_multiplier
     medium_font_size = 4 * font_size_multiplier
     
     # Apply brightness and contrast
     brightness_filter = f"brightness({brightness_level}) contrast({contrast_level})"
     
-    # Update CSS with all settings
-    st.markdown(f"""
-    <style>
-        .stApp, .main {{
-            background-color: {bg_color} !important;
-            filter: {brightness_filter};
-        }}
-        .main .block-container {{
-            background-color: {bg_color} !important;
-        }}
-        .theme-text {{
-            color: {text_color} !important;
-        }}
-        .theme-accent {{
-            color: {accent_color} !important;
-        }}
-        .theme-card {{
-            background-color: #d1ecf1 !important;
-            padding: 2rem !important;
-            border-radius: 20px !important;
-            margin: 1rem 0 !important;
-        }}
-        .huge-number {{
-            font-size: {huge_font_size}rem !important;
-            font-weight: {font_weight_css} !important;
-        }}
-        .huge-text {{
-            font-size: {huge_font_size * 0.5}rem !important;
-            font-weight: {font_weight_css} !important;
-        }}
-        .medium-text {{
-            font-size: {medium_font_size}rem !important;
-            font-weight: {font_weight_css} !important;
-        }}
-        .gate-text {{
-            font-size: {gate_font_size}rem !important;
-            font-weight: {font_weight_css} !important;
-            color: {accent_color} !important;
-        }}
-        .people-count-color {{
-            color: {people_count_color} !important;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
+    # Always update CSS to ensure proper styling (fix override issues)
+    css_key = f"{theme_option}_{font_size_multiplier}_{font_weight}_{accent_color}_{display_text_color}_{brightness_level}_{contrast_level}"
+    
+    # Force CSS update to prevent override issues
+    if True:  # Always update to ensure consistency
+        
+        # Update CSS with all settings
+        st.markdown(f"""
+        <style>
+            .stApp, .main {{
+                background-color: {bg_color} !important;
+                filter: {brightness_filter};
+                transition: all 0.3s ease !important;
+            }}
+            .main .block-container {{
+                background-color: {bg_color} !important;
+            }}
+            .theme-text {{
+                color: {display_text_color} !important;
+                transition: color 0.3s ease !important;
+            }}
+            .theme-accent {{
+                color: {accent_color} !important;
+                transition: color 0.3s ease !important;
+            }}
+            .theme-card {{
+                background-color: #d1ecf1 !important;
+                padding: 1.5rem !important;
+                border-radius: 15px !important;
+                margin: 0.5rem 0 !important;
+                border-top: 3px solid #1f77b4 !important;
+                transition: all 0.3s ease !important;
+            }}
+            .huge-number {{
+                font-size: {huge_font_size}rem !important;
+                font-weight: {font_weight_css} !important;
+                color: {display_text_color} !important;
+                transition: all 0.3s ease !important;
+            }}
+            .huge-text {{
+                font-size: {huge_font_size * 0.5}rem !important;
+                font-weight: {font_weight_css} !important;
+                color: {display_text_color} !important;
+                transition: all 0.3s ease !important;
+            }}
+            .medium-text {{
+                font-size: {medium_font_size}rem !important;
+                font-weight: {font_weight_css} !important;
+                color: {display_text_color} !important;
+                transition: all 0.3s ease !important;
+            }}
+            .gate-text {{
+                font-size: {gate_font_size}rem !important;
+                font-weight: {font_weight_css} !important;
+                color: {accent_color} !important;
+                transition: all 0.3s ease !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
     
     # Determine color scheme based on wait time
     if wait_time is None or wait_time == 0:
@@ -312,8 +352,8 @@ def main():
     # People count display
     with col1:
         st.markdown('<div class="theme-card">', unsafe_allow_html=True)
-        st.markdown('<p class="medium-text theme-text">PEOPLE IN QUEUE</p>', unsafe_allow_html=True)
-        st.markdown(f'<p class="huge-number people-count-color">{people_count}</p>', unsafe_allow_html=True)
+        st.markdown('<p class="medium-text">PEOPLE IN QUEUE</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="huge-number">{people_count}</p>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Wait time display
