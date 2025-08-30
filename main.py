@@ -40,16 +40,6 @@ except ImportError:
 # Custom CSS
 st.markdown("""
 <style>
-    /* Hide Streamlit UI elements */
-    .stDeployButton {display: none !important;}
-    footer {visibility: hidden !important;}
-    header[data-testid="stHeader"] {display: none !important;}
-    .stToolbar {display: none !important;}
-    div[data-testid="stToolbar"] {display: none !important;}
-    div[data-testid="stDecoration"] {display: none !important;}
-    div[data-testid="stStatusWidget"] {display: none !important;}
-    #MainMenu {visibility: hidden !important;}
-    
     .main-header {
         font-size: 3rem;
         color: #1f77b4;
@@ -77,7 +67,7 @@ st.markdown("""
     .error-card {
         background-color: #f8d7da;
         padding: 1rem;
-        border-radius: 10px;
+        border-radius: git px;
         border-left: 5px solid #dc3545;
     }
 </style>
@@ -145,7 +135,9 @@ def predict_checkin_wait_time(queue_size, hour_of_day, model_data):
 
 def save_detection_data(people_count, wait_time, model_name, timestamp=None, gate_name="GATE", gate_number="02", 
                        theme_option="Dark (Airport Standard)", font_size_multiplier=1.0, font_weight="Bold",
-                       accent_color="#1f77b4", display_text_color="#ffffff", brightness_level=1.0, contrast_level=1.0):
+                       accent_color="#1f77b4", people_count_color="#1f77b4", brightness_level=1.0, contrast_level=1.0,
+                       people_label_font="Arial", people_label_color="#ffffff", people_count_font="Arial",
+                       wait_time_label_font="Arial", wait_time_label_color="#ffffff", wait_time_value_font="Arial", wait_time_value_color="#dc3545"):
     """Save detection data and display settings to JSON file for display page"""
     if timestamp is None:
         timestamp = time.time()
@@ -168,9 +160,16 @@ def save_detection_data(people_count, wait_time, model_name, timestamp=None, gat
             'font_size_multiplier': float(font_size_multiplier),
             'font_weight': str(font_weight),
             'accent_color': str(accent_color),
-            'display_text_color': str(display_text_color),
+            'people_count_color': str(people_count_color),
             'brightness_level': float(brightness_level),
-            'contrast_level': float(contrast_level)
+            'contrast_level': float(contrast_level),
+            'people_label_font': str(people_label_font),
+            'people_label_color': str(people_label_color),
+            'people_count_font': str(people_count_font),
+            'wait_time_label_font': str(wait_time_label_font),
+            'wait_time_label_color': str(wait_time_label_color),
+            'wait_time_value_font': str(wait_time_value_font),
+            'wait_time_value_color': str(wait_time_value_color)
         }
     }
     
@@ -919,7 +918,7 @@ def main():
     st.sidebar.subheader("🎨 Display Theme")
     theme_option = st.sidebar.selectbox(
         "Theme",
-        ["Light (Bright Areas)", "Dark (Airport Standard)", "High Contrast (Accessibility)"],
+        ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"],
         index=0,
         help="Select display theme for different lighting conditions"
     )
@@ -945,15 +944,80 @@ def main():
     # Color Settings
     st.sidebar.subheader("🌈 Color Settings")
     accent_color = st.sidebar.color_picker(
-        "Gate Name Color",
-        value="#000000",
-        help="Color for gate name display"
+        "Accent Color",
+        value="#1f77b4",
+        help="Color for gate name and highlights"
     )
     
-    display_text_color = st.sidebar.color_picker(
-        "Text & Numbers Color",
-        value="#000000",
-        help="Color for all text and numbers (PEOPLE IN QUEUE, WAIT TIME, and their values)"
+    # Font and Color Settings for Display Parameters
+    st.sidebar.subheader("🎨 Display Parameter Customization")
+    
+    # People in Queue Text Settings
+    st.sidebar.markdown("**People in Queue Label:**")
+    people_label_font = st.sidebar.selectbox(
+        "Font Family",
+        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
+        index=0,
+        key="people_label_font",
+        help="Font for 'PEOPLE IN QUEUE' text"
+    )
+    
+    people_label_color = st.sidebar.color_picker(
+        "Text Color",
+        value="#ffffff",
+        key="people_label_color",
+        help="Color for 'PEOPLE IN QUEUE' text"
+    )
+    
+    # People Count Value Settings
+    st.sidebar.markdown("**People Count Number:**")
+    people_count_font = st.sidebar.selectbox(
+        "Font Family",
+        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
+        index=0,
+        key="people_count_font",
+        help="Font for people count number"
+    )
+    
+    people_count_color = st.sidebar.color_picker(
+        "Number Color",
+        value="#1f77b4",
+        key="people_count_color",
+        help="Color for people count number"
+    )
+    
+    # Wait Time Text Settings
+    st.sidebar.markdown("**Wait Time Label:**")
+    wait_time_label_font = st.sidebar.selectbox(
+        "Font Family",
+        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
+        index=0,
+        key="wait_time_label_font",
+        help="Font for 'WAIT TIME (in minutes)' text"
+    )
+    
+    wait_time_label_color = st.sidebar.color_picker(
+        "Text Color",
+        value="#ffffff",
+        key="wait_time_label_color",
+        help="Color for 'WAIT TIME (in minutes)' text"
+    )
+    
+    # Wait Time Value Settings
+    st.sidebar.markdown("**Wait Time Number:**")
+    wait_time_value_font = st.sidebar.selectbox(
+        "Font Family",
+        ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"],
+        index=0,
+        key="wait_time_value_font",
+        help="Font for wait time number"
+    )
+    
+    wait_time_value_color = st.sidebar.color_picker(
+        "Number Color",
+        value="#dc3545",
+        key="wait_time_value_color",
+        help="Color for wait time number"
     )
     
     # Brightness Settings
@@ -1190,9 +1254,16 @@ def main():
                                 font_size_multiplier=font_size_multiplier,
                                 font_weight=font_weight,
                                 accent_color=accent_color,
-                                display_text_color=display_text_color,
+                                people_count_color=people_count_color,
                                 brightness_level=brightness_level,
-                                contrast_level=contrast_level
+                                contrast_level=contrast_level,
+                                people_label_font=people_label_font,
+                                people_label_color=people_label_color,
+                                people_count_font=people_count_font,
+                                wait_time_label_font=wait_time_label_font,
+                                wait_time_label_color=wait_time_label_color,
+                                wait_time_value_font=wait_time_value_font,
+                                wait_time_value_color=wait_time_value_color
                             )
                             
                             # Add to history

@@ -12,52 +12,35 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Force light theme for server compatibility
-try:
-    st._config.set_option("theme.base", "light")
-    st._config.set_option("theme.backgroundColor", "#ffffff")
-    st._config.set_option("theme.secondaryBackgroundColor", "#f0f0f0")
-    st._config.set_option("theme.textColor", "#000000")
-except:
-    # Fallback if config fails on server
-    pass
+# Force dark theme
+st._config.set_option("theme.base", "dark")
+st._config.set_option("theme.backgroundColor", "#0e1117")
+st._config.set_option("theme.secondaryBackgroundColor", "#262730")
+st._config.set_option("theme.textColor", "#fafafa")
 
 # Custom CSS for huge text and TV-friendly display
 st.markdown("""
 <style>
-    /* Force server-safe background */
+    /* Force dark background */
     .stApp {
-        background-color: #ffffff !important;
-        color: #000000 !important;
+        background-color: #0e1117 !important;
     }
     
     .main {
-        background-color: #ffffff !important;
-        color: #000000 !important;
+        background-color: #0e1117 !important;
     }
     
-    /* Hide ALL Streamlit UI elements */
-    .stDeployButton {display: none !important;}
-    footer {visibility: hidden !important;}
-    .stApp > header {visibility: hidden !important;}
-    header[data-testid="stHeader"] {display: none !important;}
-    .stToolbar {display: none !important;}
-    .stActionButton {display: none !important;}
-    div[data-testid="stToolbar"] {display: none !important;}
-    div[data-testid="stDecoration"] {display: none !important;}
-    div[data-testid="stStatusWidget"] {display: none !important;}
-    #MainMenu {visibility: hidden !important;}
-    .stApp > div:first-child {display: none !important;}
-    .css-1rs6os {display: none !important;}
-    .css-17ziqus {display: none !important;}
+    /* Hide Streamlit elements */
+    .stDeployButton {display: none;}
+    footer {visibility: hidden;}
+    .stApp > header {visibility: hidden;}
     
     /* Full screen styling */
     .main .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
         max-width: 100%;
-        background-color: #ffffff !important;
-        color: #000000 !important;
+        background-color: #0e1117 !important;
     }
     
     /* Huge text styles */
@@ -67,7 +50,6 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
-        color: #000000 !important;
     }
     
     .huge-text {
@@ -76,7 +58,6 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
-        color: #000000 !important;
     }
     
     .medium-text {
@@ -84,15 +65,6 @@ st.markdown("""
         font-weight: bold !important;
         text-align: center !important;
         margin: 1rem 0 !important;
-        color: #000000 !important;
-    }
-    
-    .gate-text {
-        font-size: 6rem !important;
-        font-weight: bold !important;
-        text-align: center !important;
-        margin: 0 !important;
-        color: #000000 !important;
     }
     
     .status-text {
@@ -112,31 +84,27 @@ st.markdown("""
     /* Background colors for better contrast */
     .green-bg { 
         background-color: #d4edda !important; 
-        padding: 1.5rem !important;
-        border-radius: 15px !important;
-        margin: 0.5rem 0 !important;
-        border-top: 3px solid #28a745 !important;
+        padding: 2rem !important;
+        border-radius: 20px !important;
+        margin: 1rem 0 !important;
     }
     .yellow-bg { 
         background-color: #fff3cd !important; 
-        padding: 1.5rem !important;
-        border-radius: 15px !important;
-        margin: 0.5rem 0 !important;
-        border-top: 3px solid #ffc107 !important;
+        padding: 2rem !important;
+        border-radius: 20px !important;
+        margin: 1rem 0 !important;
     }
     .red-bg { 
         background-color: #f8d7da !important; 
-        padding: 1.5rem !important;
-        border-radius: 15px !important;
-        margin: 0.5rem 0 !important;
-        border-top: 3px solid #dc3545 !important;
+        padding: 2rem !important;
+        border-radius: 20px !important;
+        margin: 1rem 0 !important;
     }
     .blue-bg { 
         background-color: #d1ecf1 !important; 
-        padding: 1.5rem !important;
-        border-radius: 15px !important;
-        margin: 0.5rem 0 !important;
-        border-top: 3px solid #1f77b4 !important;
+        padding: 2rem !important;
+        border-radius: 20px !important;
+        margin: 1rem 0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -198,13 +166,13 @@ def main():
         st.markdown("• Font size & weight")
         st.markdown("• Brightness & contrast")
     
-    # Default display settings (fallback) - Airport sunlight optimized
+    # Default display settings (fallback)
     default_settings = {
-        'theme': 'Light (Bright Areas)',
+        'theme': 'Dark (Airport Standard)',
         'font_size_multiplier': 1.0,
         'font_weight': 'Bold',
-        'accent_color': '#000000',  # Black for sunlight visibility
-        'display_text_color': '#000000',  # Black text for white background
+        'accent_color': '#1f77b4',
+        'people_count_color': '#1f77b4',
         'brightness_level': 1.0,
         'contrast_level': 1.0
     }
@@ -232,29 +200,24 @@ def main():
     gate_name = data.get('gate_name', 'GATE')
     gate_number = data.get('gate_number', '02')
     
-    # Extract display settings with safety checks
+    # Extract display settings
     display_settings = data.get('display_settings', default_settings)
-    theme_option = display_settings.get('theme', 'Light (Bright Areas)')
+    theme_option = display_settings.get('theme', 'Dark (Airport Standard)')
     font_size_multiplier = display_settings.get('font_size_multiplier', 1.0)
     font_weight = display_settings.get('font_weight', 'Bold')
-    accent_color = display_settings.get('accent_color', '#000000')
-    display_text_color = display_settings.get('display_text_color', '#000000')
+    accent_color = display_settings.get('accent_color', '#1f77b4')
+    people_count_color = display_settings.get('people_count_color', '#1f77b4')
     brightness_level = display_settings.get('brightness_level', 1.0)
     contrast_level = display_settings.get('contrast_level', 1.0)
     
-    # Safety checks for airport sunlight conditions
-    if theme_option == "Light (Bright Areas)":
-        # Force black text on white background for sunlight
-        if display_text_color == '#ffffff' or display_text_color == '#ffff00':
-            display_text_color = '#000000'  # Force black text
-        if accent_color == '#ffffff' or accent_color == '#ffff00':
-            accent_color = '#000000'  # Force black accent
-    elif theme_option == "High Contrast (Accessibility)":
-        # Fix high contrast mode
-        if display_text_color == '#000000':
-            display_text_color = '#ffffff'  # White text on black background
-        if accent_color == '#000000':
-            accent_color = '#ffff00'  # Yellow accent for visibility
+    # Extract font and color settings for display parameters
+    people_label_font = display_settings.get('people_label_font', 'Arial')
+    people_label_color = display_settings.get('people_label_color', '#ffffff')
+    people_count_font = display_settings.get('people_count_font', 'Arial')
+    wait_time_label_font = display_settings.get('wait_time_label_font', 'Arial')
+    wait_time_label_color = display_settings.get('wait_time_label_color', '#ffffff')
+    wait_time_value_font = display_settings.get('wait_time_value_font', 'Arial')
+    wait_time_value_color = display_settings.get('wait_time_value_color', '#dc3545')
     
     # Apply theme colors based on selection
     if theme_option == "Light (Bright Areas)":
@@ -277,73 +240,74 @@ def main():
         "Extra Bold": "900"
     }.get(font_weight, "700")
     
-    # Calculate font sizes based on multiplier - keep gate large
-    gate_font_size = 6 * font_size_multiplier  # Keep original gate size
+    # Calculate font sizes based on multiplier
+    gate_font_size = 6 * font_size_multiplier
     huge_font_size = 15 * font_size_multiplier
     medium_font_size = 4 * font_size_multiplier
     
     # Apply brightness and contrast
     brightness_filter = f"brightness({brightness_level}) contrast({contrast_level})"
     
-    # Always update CSS to ensure proper styling (fix override issues)
-    css_key = f"{theme_option}_{font_size_multiplier}_{font_weight}_{accent_color}_{display_text_color}_{brightness_level}_{contrast_level}"
-    
-    # Force CSS update to prevent override issues
-    if True:  # Always update to ensure consistency
-        
-        # Update CSS with all settings
-        st.markdown(f"""
-        <style>
-            .stApp, .main {{
-                background-color: {bg_color} !important;
-                filter: {brightness_filter};
-                transition: all 0.3s ease !important;
-            }}
-            .main .block-container {{
-                background-color: {bg_color} !important;
-            }}
-            .theme-text {{
-                color: {display_text_color} !important;
-                transition: color 0.3s ease !important;
-            }}
-            .theme-accent {{
-                color: {accent_color} !important;
-                transition: color 0.3s ease !important;
-            }}
-            .theme-card {{
-                background-color: #d1ecf1 !important;
-                padding: 1.5rem !important;
-                border-radius: 15px !important;
-                margin: 0.5rem 0 !important;
-                border-top: 3px solid #1f77b4 !important;
-                transition: all 0.3s ease !important;
-            }}
-            .huge-number {{
-                font-size: {huge_font_size}rem !important;
-                font-weight: {font_weight_css} !important;
-                color: {display_text_color} !important;
-                transition: all 0.3s ease !important;
-            }}
-            .huge-text {{
-                font-size: {huge_font_size * 0.5}rem !important;
-                font-weight: {font_weight_css} !important;
-                color: {display_text_color} !important;
-                transition: all 0.3s ease !important;
-            }}
-            .medium-text {{
-                font-size: {medium_font_size}rem !important;
-                font-weight: {font_weight_css} !important;
-                color: {display_text_color} !important;
-                transition: all 0.3s ease !important;
-            }}
-            .gate-text {{
-                font-size: {gate_font_size}rem !important;
-                font-weight: {font_weight_css} !important;
-                color: {accent_color} !important;
-                transition: all 0.3s ease !important;
-            }}
-        </style>
-        """, unsafe_allow_html=True)
+    # Update CSS with all settings
+    st.markdown(f"""
+    <style>
+        .stApp, .main {{
+            background-color: {bg_color} !important;
+            filter: {brightness_filter};
+        }}
+        .main .block-container {{
+            background-color: {bg_color} !important;
+        }}
+        .theme-text {{
+            color: {text_color} !important;
+        }}
+        .theme-accent {{
+            color: {accent_color} !important;
+        }}
+        .theme-card {{
+            background-color: #d1ecf1 !important;
+            padding: 2rem !important;
+            border-radius: 20px !important;
+            margin: 1rem 0 !important;
+        }}
+        .huge-number {{
+            font-size: {huge_font_size}rem !important;
+            font-weight: {font_weight_css} !important;
+        }}
+        .huge-text {{
+            font-size: {huge_font_size * 0.5}rem !important;
+            font-weight: {font_weight_css} !important;
+        }}
+        .medium-text {{
+            font-size: {medium_font_size}rem !important;
+            font-weight: {font_weight_css} !important;
+        }}
+        .gate-text {{
+            font-size: {gate_font_size}rem !important;
+            font-weight: {font_weight_css} !important;
+            color: {accent_color} !important;
+        }}
+        .people-count-color {{
+            color: {people_count_color} !important;
+        }}
+        .people-label-style {{
+            font-family: {people_label_font}, sans-serif !important;
+            color: {people_label_color} !important;
+        }}
+        .people-count-style {{
+            font-family: {people_count_font}, sans-serif !important;
+            color: {people_count_color} !important;
+        }}
+        .wait-time-label-style {{
+            font-family: {wait_time_label_font}, sans-serif !important;
+            color: {wait_time_label_color} !important;
+        }}
+        .wait-time-value-style {{
+            font-family: {wait_time_value_font}, sans-serif !important;
+            color: {wait_time_value_color} !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
     
     # Determine color scheme based on wait time
     if wait_time is None or wait_time == 0:
@@ -373,19 +337,18 @@ def main():
     # People count display
     with col1:
         st.markdown('<div class="theme-card">', unsafe_allow_html=True)
-        st.markdown('<p class="medium-text">PEOPLE IN QUEUE</p>', unsafe_allow_html=True)
-        st.markdown(f'<p class="huge-number">{people_count}</p>', unsafe_allow_html=True)
+        st.markdown('<p class="medium-text people-label-style">PEOPLE IN QUEUE</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="huge-number people-count-style">{people_count}</p>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Wait time display
     with col2:
         st.markdown(f'<div class="{bg_class}">', unsafe_allow_html=True)
-        st.markdown(f'<p class="medium-text {color_class}">WAIT TIME</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="medium-text wait-time-label-style">WAIT TIME (in minutes)</p>', unsafe_allow_html=True)
         if wait_time is not None and wait_time > 0:
-            st.markdown(f'<p class="huge-number {color_class}">{int(wait_time)}</p>', unsafe_allow_html=True)
-            st.markdown(f'<p class="medium-text {color_class}">MINUTES</p>', unsafe_allow_html=True)
+            st.markdown(f'<p class="huge-number wait-time-value-style">{int(wait_time)}</p>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<p class="huge-text {color_class}">NO WAIT</p>', unsafe_allow_html=True)
+            st.markdown(f'<p class="huge-text wait-time-value-style">NO WAIT</p>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
 
