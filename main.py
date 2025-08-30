@@ -919,7 +919,7 @@ def main():
     st.sidebar.subheader("🎨 Display Theme")
     theme_option = st.sidebar.selectbox(
         "Theme",
-        ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"],
+        ["Light (Bright Areas)", "Dark (Airport Standard)", "High Contrast (Accessibility)"],
         index=0,
         help="Select display theme for different lighting conditions"
     )
@@ -946,13 +946,13 @@ def main():
     st.sidebar.subheader("🌈 Color Settings")
     accent_color = st.sidebar.color_picker(
         "Gate Name Color",
-        value="#1f77b4",
+        value="#000000",
         help="Color for gate name display"
     )
     
     display_text_color = st.sidebar.color_picker(
         "Text & Numbers Color",
-        value="#ffffff",
+        value="#000000",
         help="Color for all text and numbers (PEOPLE IN QUEUE, WAIT TIME, and their values)"
     )
     

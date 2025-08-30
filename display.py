@@ -191,13 +191,13 @@ def main():
         st.markdown("• Font size & weight")
         st.markdown("• Brightness & contrast")
     
-    # Default display settings (fallback)
+    # Default display settings (fallback) - Airport sunlight optimized
     default_settings = {
-        'theme': 'Dark (Airport Standard)',
+        'theme': 'Light (Bright Areas)',
         'font_size_multiplier': 1.0,
         'font_weight': 'Bold',
-        'accent_color': '#1f77b4',
-        'display_text_color': '#ffffff',
+        'accent_color': '#000000',  # Black for sunlight visibility
+        'display_text_color': '#000000',  # Black text for white background
         'brightness_level': 1.0,
         'contrast_level': 1.0
     }
@@ -225,15 +225,29 @@ def main():
     gate_name = data.get('gate_name', 'GATE')
     gate_number = data.get('gate_number', '02')
     
-    # Extract display settings
+    # Extract display settings with safety checks
     display_settings = data.get('display_settings', default_settings)
-    theme_option = display_settings.get('theme', 'Dark (Airport Standard)')
+    theme_option = display_settings.get('theme', 'Light (Bright Areas)')
     font_size_multiplier = display_settings.get('font_size_multiplier', 1.0)
     font_weight = display_settings.get('font_weight', 'Bold')
-    accent_color = display_settings.get('accent_color', '#1f77b4')
-    display_text_color = display_settings.get('display_text_color', '#ffffff')
+    accent_color = display_settings.get('accent_color', '#000000')
+    display_text_color = display_settings.get('display_text_color', '#000000')
     brightness_level = display_settings.get('brightness_level', 1.0)
     contrast_level = display_settings.get('contrast_level', 1.0)
+    
+    # Safety checks for airport sunlight conditions
+    if theme_option == "Light (Bright Areas)":
+        # Force black text on white background for sunlight
+        if display_text_color == '#ffffff' or display_text_color == '#ffff00':
+            display_text_color = '#000000'  # Force black text
+        if accent_color == '#ffffff' or accent_color == '#ffff00':
+            accent_color = '#000000'  # Force black accent
+    elif theme_option == "High Contrast (Accessibility)":
+        # Fix high contrast mode
+        if display_text_color == '#000000':
+            display_text_color = '#ffffff'  # White text on black background
+        if accent_color == '#000000':
+            accent_color = '#ffff00'  # Yellow accent for visibility
     
     # Apply theme colors based on selection
     if theme_option == "Light (Bright Areas)":
