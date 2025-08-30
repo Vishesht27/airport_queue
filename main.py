@@ -21,6 +21,7 @@ import pandas as pd
 import threading
 import queue
 import os
+import random
 
 # Import model libraries
 try:
@@ -66,7 +67,7 @@ st.markdown("""
     .error-card {
         background-color: #f8d7da;
         padding: 1rem;
-        border-radius: 10px;
+        border-radius: git px;
         border-left: 5px solid #dc3545;
     }
 </style>
@@ -132,8 +133,10 @@ def predict_checkin_wait_time(queue_size, hour_of_day, model_data):
         st.error(f"Error making prediction: {e}")
         return None
 
-def save_detection_data(people_count, wait_time, model_name, timestamp=None):
-    """Save detection data to JSON file for display page"""
+def save_detection_data(people_count, wait_time, model_name, timestamp=None, gate_name="GATE", gate_number="02", 
+                       theme_option="Dark (Airport Standard)", font_size_multiplier=1.0, font_weight="Bold",
+                       accent_color="#1f77b4", people_count_color="#1f77b4", brightness_level=1.0, contrast_level=1.0):
+    """Save detection data and display settings to JSON file for display page"""
     if timestamp is None:
         timestamp = time.time()
     
@@ -147,7 +150,18 @@ def save_detection_data(people_count, wait_time, model_name, timestamp=None):
         'wait_time': wait_time,
         'model': str(model_name),
         'timestamp': timestamp,
-        'last_updated': datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        'last_updated': datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S'),
+        'gate_name': str(gate_name),
+        'gate_number': str(gate_number),
+        'display_settings': {
+            'theme': str(theme_option),
+            'font_size_multiplier': float(font_size_multiplier),
+            'font_weight': str(font_weight),
+            'accent_color': str(accent_color),
+            'people_count_color': str(people_count_color),
+            'brightness_level': float(brightness_level),
+            'contrast_level': float(contrast_level)
+        }
     }
     
     try:
@@ -819,7 +833,7 @@ def main():
     # Simple wait time method selection
     wait_time_method = st.sidebar.radio(
         "📊 How to calculate wait time?",
-        ["Smart AI Prediction (Recommended)", "Simple Calculation (Custom)"],
+        ["Smart AI Prediction (Recommended)", "Custom AI"],
         index=0,
         help="Choose how to estimate queue wait times"
     )
@@ -852,24 +866,105 @@ def main():
         else:
             st.sidebar.info("⏰ Normal Hours - Standard service")
             
-    else:  # Simple Calculation (Custom)
+    else:  # Custom AI
         use_ml_prediction = False
         current_hour = datetime.now().hour
         
     # User can set seconds per person (always available)
     if not use_ml_prediction:
-        seconds_per_person = st.sidebar.slider(
-            "⏱️ Seconds per person",
-            min_value=10,
-            max_value=120,
-            value=40,
-            step=5,
-            help="How many seconds each person takes to process"
-        )
-        
-        st.sidebar.info(f"📊 Using: {seconds_per_person} seconds per person")
+        st.sidebar.info("🎲 Custom AI generates random processing time between 40-50 seconds per person")
+        seconds_per_person = None  # Will be generated randomly
     else:
         seconds_per_person = 40  # Default value when using ML
+    
+    # Display Settings
+    st.sidebar.header("📺 Display Settings")
+    gate_name = st.sidebar.text_input("Gate Name", value="GATE", help="Name to display (e.g., GATE, TERMINAL, CHECKPOINT)")
+    gate_number = st.sidebar.text_input("Gate Number", value="02", help="Gate number to display")
+    
+    # People Count Adjustment
+    st.sidebar.subheader("👥 People Count Adjustment")
+    enable_people_adjustment = st.sidebar.checkbox("Enable people count adjustment", value=False, help="Add/subtract people from detected count")
+    
+    if enable_people_adjustment:
+        people_adjustment = st.sidebar.slider(
+            "Adjust detected count",
+            min_value=-20,
+            max_value=20,
+            value=0,
+            step=1,
+            help="Add (+) or subtract (-) people from detected count before calculations"
+        )
+        
+        if people_adjustment > 0:
+            st.sidebar.success(f"✅ Adding {people_adjustment} people to detected count")
+        elif people_adjustment < 0:
+            st.sidebar.warning(f"⚠️ Subtracting {abs(people_adjustment)} people from detected count")
+        else:
+            st.sidebar.info("📊 Using exact detected count")
+    else:
+        people_adjustment = 0
+    
+    # Theme Settings
+    st.sidebar.subheader("🎨 Display Theme")
+    theme_option = st.sidebar.selectbox(
+        "Theme",
+        ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"],
+        index=0,
+        help="Select display theme for different lighting conditions"
+    )
+    
+    # Font Settings
+    st.sidebar.subheader("🔤 Font Settings")
+    font_size_multiplier = st.sidebar.slider(
+        "Font Size",
+        min_value=0.5,
+        max_value=2.0,
+        value=1.0,
+        step=0.1,
+        help="Adjust font size (1.0 = normal, 2.0 = double size)"
+    )
+    
+    font_weight = st.sidebar.selectbox(
+        "Font Weight",
+        ["Normal", "Bold", "Extra Bold"],
+        index=1,
+        help="Text thickness"
+    )
+    
+    # Color Settings
+    st.sidebar.subheader("🌈 Color Settings")
+    accent_color = st.sidebar.color_picker(
+        "Accent Color",
+        value="#1f77b4",
+        help="Color for gate name and highlights"
+    )
+    
+    people_count_color = st.sidebar.color_picker(
+        "People Count Color",
+        value="#1f77b4",
+        help="Color for people count display"
+    )
+    
+    # Brightness Settings
+    st.sidebar.subheader("💡 Brightness Settings")
+    brightness_level = st.sidebar.slider(
+        "Screen Brightness",
+        min_value=0.3,
+        max_value=1.0,
+        value=1.0,
+        step=0.1,
+        help="Adjust overall display brightness"
+    )
+    
+    contrast_level = st.sidebar.slider(
+        "Contrast Level",
+        min_value=0.5,
+        max_value=2.0,
+        value=1.0,
+        step=0.1,
+        help="Adjust contrast for better visibility"
+    )
     
     # Cropping settings
     st.sidebar.header("✂️ Video Cropping")
@@ -1055,7 +1150,9 @@ def main():
                         )
                         
                         if detection_results:
-                            people_count = detection_results['people_count']
+                            # Apply people count adjustment
+                            raw_people_count = detection_results['people_count']
+                            people_count = max(0, raw_people_count + people_adjustment)  # Ensure non-negative
                             
                             # Calculate wait time
                             wait_time = None
@@ -1067,14 +1164,25 @@ def main():
                                         model_data=queue_model_data
                                     )
                                 else:
-                                    wait_time = (people_count * seconds_per_person) / 60  # User-defined seconds per person in minutes
+                                    # Custom AI: Generate random seconds between 40-50
+                                    random_seconds = random.randint(40, 50)
+                                    wait_time = (people_count * random_seconds) / 60  # Random seconds per person in minutes
                             
                             # Save detection data for display page
                             save_detection_data(
                                 people_count=people_count,
                                 wait_time=wait_time,
                                 model_name=selected_model,
-                                timestamp=current_time
+                                timestamp=current_time,
+                                gate_name=gate_name,
+                                gate_number=gate_number,
+                                theme_option=theme_option,
+                                font_size_multiplier=font_size_multiplier,
+                                font_weight=font_weight,
+                                accent_color=accent_color,
+                                people_count_color=people_count_color,
+                                brightness_level=brightness_level,
+                                contrast_level=contrast_level
                             )
                             
                             # Add to history
@@ -1102,12 +1210,20 @@ def main():
                                     "Original (Best Quality)": " 🔍"
                                 }[image_quality]
                                 
+                                # Show adjustment info
+                                adjustment_indicator = ""
+                                if people_adjustment != 0:
+                                    adjustment_indicator = f" (Raw: {raw_people_count}, Adjusted: {people_count})"
+                                
                                 st.success(f"✅ **{people_count} people detected{crop_indicator}{quality_indicator}**")
                                 st.info(f"⚡ {detection_results['inference_time']:.2f}s | 🎯 {selected_model}")
                                 
                                 # Show processing info
                                 if image_quality != "Original (Best Quality)":
                                     st.caption(f"📏 Processed at {quality_info[image_quality].split(' - ')[0]}")
+                                
+                                if adjustment_indicator:
+                                    st.caption(f"👥 {adjustment_indicator}")
                                 
                                 # Wait time display
                                 if wait_time is not None:
