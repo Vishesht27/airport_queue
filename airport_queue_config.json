@@ -1,0 +1,59 @@
+{
+  "connection": {
+    "connection_type": "Direct Camera",
+    "ip_address": "192.168.1.125",
+    "port": 554,
+    "username": "admin",
+    "password": "",
+    "channel": 1,
+    "stream_quality": "sub",
+    "camera_brand": "Generic",
+    "custom_url": "rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u"
+  },
+  "detection": {
+    "selected_model": "YOLOv8m",
+    "confidence_threshold": 0.5,
+    "image_quality": "Medium (Balanced)",
+    "detection_interval": 10,
+    "enable_people_adjustment": false,
+    "people_adjustment": 0
+  },
+  "wait_time": {
+    "wait_time_method": "Smart AI Prediction (Recommended)",
+    "time_setting": "Auto-detect current time",
+    "current_hour": 12
+  },
+  "display": {
+    "gate_name": "GATE",
+    "gate_number": "02",
+    "theme_option": "Dark (Airport Standard)",
+    "font_size_multiplier": 1.0,
+    "font_weight": "Bold",
+    "accent_color": "#1f77b4",
+    "people_count_color": "#1f77b4",
+    "brightness_level": 1.0,
+    "contrast_level": 1.0
+  },
+  "fonts": {
+    "people_label_font": "Arial",
+    "people_label_color": "#ffffff",
+    "people_count_font": "Arial",
+    "wait_time_label_font": "Arial",
+    "wait_time_label_color": "#ffffff",
+    "wait_time_value_font": "Arial",
+    "wait_time_value_color": "#dc3545"
+  },
+  "cropping": {
+    "enable_cropping": false,
+    "crop_left": 0,
+    "crop_top": 0,
+    "crop_right": 100,
+    "crop_bottom": 100
+  },
+  "metadata": {
+    "created_at": "2025-08-30T16:25:46.700977",
+    "last_updated": "2025-08-30T16:30:03.859105",
+    "version": "1.0",
+    "description": "Airport Queue Detection System Configuration"
+  }
+}

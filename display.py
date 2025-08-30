@@ -219,6 +219,14 @@ def main():
     wait_time_value_font = display_settings.get('wait_time_value_font', 'Arial')
     wait_time_value_color = display_settings.get('wait_time_value_color', '#dc3545')
     
+    # Extract individual font sizes
+    font_sizes = data.get('font_sizes', {})
+    gate_name_size = font_sizes.get('gate_name_size', 1.0)
+    people_label_size = font_sizes.get('people_label_size', 1.0)
+    people_count_size = font_sizes.get('people_count_size', 1.0)
+    wait_time_label_size = font_sizes.get('wait_time_label_size', 1.0)
+    wait_time_value_size = font_sizes.get('wait_time_value_size', 1.0)
+    
     # Apply theme colors based on selection
     if theme_option == "Light (Bright Areas)":
         bg_color = "#ffffff"
@@ -240,10 +248,12 @@ def main():
         "Extra Bold": "900"
     }.get(font_weight, "700")
     
-    # Calculate font sizes based on multiplier
-    gate_font_size = 6 * font_size_multiplier
-    huge_font_size = 15 * font_size_multiplier
-    medium_font_size = 4 * font_size_multiplier
+    # Calculate font sizes based on individual multipliers
+    gate_font_size = 6 * gate_name_size
+    people_label_font_size = 4 * people_label_size
+    people_count_font_size = 15 * people_count_size
+    wait_time_label_font_size = 4 * wait_time_label_size
+    wait_time_value_font_size = 15 * wait_time_value_size
     
     # Apply brightness and contrast
     brightness_filter = f"brightness({brightness_level}) contrast({contrast_level})"
@@ -271,15 +281,15 @@ def main():
             margin: 1rem 0 !important;
         }}
         .huge-number {{
-            font-size: {huge_font_size}rem !important;
+            font-size: {people_count_font_size}rem !important;
             font-weight: {font_weight_css} !important;
         }}
         .huge-text {{
-            font-size: {huge_font_size * 0.5}rem !important;
+            font-size: {wait_time_value_font_size * 0.5}rem !important;
             font-weight: {font_weight_css} !important;
         }}
         .medium-text {{
-            font-size: {medium_font_size}rem !important;
+            font-size: {people_label_font_size}rem !important;
             font-weight: {font_weight_css} !important;
         }}
         .gate-text {{
@@ -301,10 +311,12 @@ def main():
         .wait-time-label-style {{
             font-family: {wait_time_label_font}, sans-serif !important;
             color: {wait_time_label_color} !important;
+            font-size: {wait_time_label_font_size}rem !important;
         }}
         .wait-time-value-style {{
             font-family: {wait_time_value_font}, sans-serif !important;
             color: {wait_time_value_color} !important;
+            font-size: {wait_time_value_font_size}rem !important;
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -344,7 +356,7 @@ def main():
     # Wait time display
     with col2:
         st.markdown(f'<div class="{bg_class}">', unsafe_allow_html=True)
-        st.markdown(f'<p class="medium-text wait-time-label-style">WAIT TIME (in minutes)</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="medium-text wait-time-label-style">WAIT TIME (IN MINUTES)</p>', unsafe_allow_html=True)
         if wait_time is not None and wait_time > 0:
             st.markdown(f'<p class="huge-number wait-time-value-style">{int(wait_time)}</p>', unsafe_allow_html=True)
         else:

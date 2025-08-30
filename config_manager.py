@@ -72,6 +72,15 @@ class ConfigManager:
                 "wait_time_value_color": "#dc3545"
             },
             
+            # Individual font sizes
+            "font_sizes": {
+                "gate_name_size": 1.0,
+                "people_label_size": 1.0,
+                "people_count_size": 1.0,
+                "wait_time_label_size": 1.0,
+                "wait_time_value_size": 1.0
+            },
+            
             # Cropping settings
             "cropping": {
                 "enable_cropping": False,
@@ -274,6 +283,14 @@ class ConfigManager:
         st.session_state.wait_time_value_font = fonts.get("wait_time_value_font", "Arial")
         st.session_state.wait_time_value_color = fonts.get("wait_time_value_color", "#dc3545")
         
+        # Font sizes
+        font_sizes = config.get("font_sizes", {})
+        st.session_state.gate_name_size = font_sizes.get("gate_name_size", 1.0)
+        st.session_state.people_label_size = font_sizes.get("people_label_size", 1.0)
+        st.session_state.people_count_size = font_sizes.get("people_count_size", 1.0)
+        st.session_state.wait_time_label_size = font_sizes.get("wait_time_label_size", 1.0)
+        st.session_state.wait_time_value_size = font_sizes.get("wait_time_value_size", 1.0)
+        
         # Cropping settings
         crop = config.get("cropping", {})
         st.session_state.enable_cropping = crop.get("enable_cropping", False)
@@ -339,6 +356,15 @@ class ConfigManager:
             "wait_time_label_color": getattr(st.session_state, 'wait_time_label_color', "#ffffff"),
             "wait_time_value_font": getattr(st.session_state, 'wait_time_value_font', "Arial"),
             "wait_time_value_color": getattr(st.session_state, 'wait_time_value_color', "#dc3545")
+        })
+        
+        # Font sizes
+        config["font_sizes"].update({
+            "gate_name_size": getattr(st.session_state, 'gate_name_size', 1.0),
+            "people_label_size": getattr(st.session_state, 'people_label_size', 1.0),
+            "people_count_size": getattr(st.session_state, 'people_count_size', 1.0),
+            "wait_time_label_size": getattr(st.session_state, 'wait_time_label_size', 1.0),
+            "wait_time_value_size": getattr(st.session_state, 'wait_time_value_size', 1.0)
         })
         
         # Cropping settings

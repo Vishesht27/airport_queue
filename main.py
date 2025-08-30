@@ -140,7 +140,8 @@ def save_detection_data(people_count, wait_time, model_name, timestamp=None, gat
                        theme_option="Dark (Airport Standard)", font_size_multiplier=1.0, font_weight="Bold",
                        accent_color="#1f77b4", people_count_color="#1f77b4", brightness_level=1.0, contrast_level=1.0,
                        people_label_font="Arial", people_label_color="#ffffff", people_count_font="Arial",
-                       wait_time_label_font="Arial", wait_time_label_color="#ffffff", wait_time_value_font="Arial", wait_time_value_color="#dc3545"):
+                       wait_time_label_font="Arial", wait_time_label_color="#ffffff", wait_time_value_font="Arial", wait_time_value_color="#dc3545",
+                       gate_name_size=1.0, people_label_size=1.0, people_count_size=1.0, wait_time_label_size=1.0, wait_time_value_size=1.0):
     """Save detection data and display settings to JSON file for display page"""
     if timestamp is None:
         timestamp = time.time()
@@ -173,6 +174,13 @@ def save_detection_data(people_count, wait_time, model_name, timestamp=None, gat
             'wait_time_label_color': str(wait_time_label_color),
             'wait_time_value_font': str(wait_time_value_font),
             'wait_time_value_color': str(wait_time_value_color)
+        },
+        'font_sizes': {
+            'gate_name_size': float(gate_name_size),
+            'people_label_size': float(people_label_size),
+            'people_count_size': float(people_count_size),
+            'wait_time_label_size': float(wait_time_label_size),
+            'wait_time_value_size': float(wait_time_value_size)
         }
     }
     
@@ -815,9 +823,7 @@ def main():
     connection_type = st.sidebar.selectbox(
         "Connection Type",
         ["NVR", "Direct Camera", "HTTP Stream", "Custom URL"],
-        index=["NVR", "Direct Camera", "HTTP Stream", "Custom URL"].index(
-            getattr(st.session_state, 'connection_type', 'NVR')
-        ),
+        index=0,
         help="Choose how to connect to your camera",
         key='connection_type'
     )
@@ -829,7 +835,7 @@ def main():
         # Custom URL input
         custom_url = st.sidebar.text_area(
             "Stream URL",
-            value=getattr(st.session_state, 'custom_url', "rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u"),
+            value="rtsp://admin:password@192.168.1.125:554/rtsp/defaultPrimary?streamType=u",
             help="Enter the complete stream URL (RTSP or HTTP)",
             key='custom_url'
         )
@@ -851,7 +857,7 @@ def main():
     else:
         # Standard connection details
         # Pre-fill with saved values or defaults
-        default_ip = getattr(st.session_state, 'ip_address', "192.168.1.165" if connection_type == "NVR" else "192.168.1.125")
+        default_ip = "192.168.1.165" if connection_type == "NVR" else "192.168.1.125"
         ip_address = st.sidebar.text_input("IP Address", value=default_ip, key='ip_address')
         
         # Port selection based on connection type
@@ -865,20 +871,17 @@ def main():
             default_port = 80
             port_help = "HTTP port (usually 80)"
         
-        saved_port = getattr(st.session_state, 'port', default_port)
-        port = st.sidebar.number_input("Port", value=saved_port, min_value=1, max_value=65535, help=port_help, key='port')
+        port = st.sidebar.number_input("Port", value=default_port, min_value=1, max_value=65535, help=port_help, key='port')
         
         # Authentication
-        username = st.sidebar.text_input("Username", value=getattr(st.session_state, 'username', "admin"), key='username')
-        password = st.sidebar.text_input("Password", type="password", value=getattr(st.session_state, 'password', ""), key='password')
+        username = st.sidebar.text_input("Username", value="admin", key='username')
+        password = st.sidebar.text_input("Password", type="password", value="", key='password')
         
         # Camera brand selection for smart URL building
         camera_brand = st.sidebar.selectbox(
             "Camera Brand",
             ["Generic", "Pelco", "Hikvision", "Dahua", "Axis"],
-            index=["Generic", "Pelco", "Hikvision", "Dahua", "Axis"].index(
-                getattr(st.session_state, 'camera_brand', 'Generic')
-            ),
+            index=0,
             help="Select your camera brand for optimized URL format",
             key='camera_brand'
         )
@@ -887,7 +890,7 @@ def main():
         if connection_type == "NVR":
             channel = st.sidebar.number_input(
                 "Camera Channel", 
-                value=getattr(st.session_state, 'channel', 1), 
+                value=1, 
                 min_value=1, 
                 max_value=32, 
                 help="NVR camera channel number",
@@ -896,9 +899,7 @@ def main():
             stream_quality = st.sidebar.selectbox(
                 "Stream Quality",
                 ["sub", "main"],
-                index=["sub", "main"].index(
-                    getattr(st.session_state, 'stream_quality', 'sub')
-                ),
+                index=0,
                 help="Sub-stream: Lower quality, better for detection. Main-stream: Higher quality",
                 key='stream_quality'
             )
@@ -914,34 +915,27 @@ def main():
         st.sidebar.error("❌ No detection models available")
         return
     
-    # Get saved model or use first available
-    saved_model = getattr(st.session_state, 'selected_model', available_models[0])
-    if saved_model not in available_models:
-        saved_model = available_models[0]
-    
     selected_model = st.sidebar.selectbox(
         "🎯 Detection Model", 
         available_models,
-        index=available_models.index(saved_model),
+        index=0,
         key='selected_model'
     )
     confidence_threshold = st.sidebar.slider(
         "🎚️ Confidence Threshold", 
         0.1, 0.9, 
-        getattr(st.session_state, 'confidence_threshold', 0.5), 
+        0.5, 
         0.1,
         key='confidence_threshold'
     )
     
     # Image quality selection
     quality_options = ["Smaller (Fast Processing)", "Medium (Balanced)", "Original (Best Quality)"]
-    saved_quality = getattr(st.session_state, 'image_quality', "Medium (Balanced)")
-    quality_index = quality_options.index(saved_quality) if saved_quality in quality_options else 1
     
     image_quality = st.sidebar.radio(
         "📏 Image Quality",
         quality_options,
-        index=quality_index,
+        index=1,
         help="Choose processing speed vs accuracy trade-off",
         key='image_quality'
     )
@@ -961,30 +955,25 @@ def main():
     
     # Detection Settings
     interval_options = [1, 3, 5, 8, 10, 15, 20]
-    saved_interval = getattr(st.session_state, 'detection_interval', 5)
-    interval_index = interval_options.index(saved_interval) if saved_interval in interval_options else 2
     
     detection_interval = st.sidebar.selectbox(
         "Detection Interval (seconds)",
         interval_options,
-        index=interval_index,
+        index=2,
         help="How often to run people detection (shorter = more real-time, more CPU usage)",
         key='detection_interval'
     )
-    st.session_state.detection_interval = detection_interval
     
     # Wait time settings
     st.sidebar.header("⏱️ Wait Time Calculation")
     
     # Simple wait time method selection
     wait_time_options = ["Smart AI Prediction (Recommended)", "Custom AI"]
-    saved_wait_method = getattr(st.session_state, 'wait_time_method', "Smart AI Prediction (Recommended)")
-    wait_method_index = wait_time_options.index(saved_wait_method) if saved_wait_method in wait_time_options else 0
     
     wait_time_method = st.sidebar.radio(
         "📊 How to calculate wait time?",
         wait_time_options,
-        index=wait_method_index,
+        index=0,
         help="Choose how to estimate queue wait times",
         key='wait_time_method'
     )
@@ -997,13 +986,11 @@ def main():
         
         # Time of day setting
         time_options = ["Auto-detect current time", "Set manually"]
-        saved_time_setting = getattr(st.session_state, 'time_setting', "Auto-detect current time")
-        time_index = time_options.index(saved_time_setting) if saved_time_setting in time_options else 0
         
         time_setting = st.sidebar.radio(
             "🕐 Time of day",
             time_options,
-            index=time_index,
+            index=0,
             key='time_setting'
         )
         
@@ -1011,7 +998,7 @@ def main():
             current_hour = st.sidebar.slider(
                 "Current hour (24h format)", 
                 0, 23, 
-                getattr(st.session_state, 'current_hour', datetime.now().hour),
+                datetime.now().hour,
                 key='current_hour'
             )
         else:
@@ -1042,13 +1029,13 @@ def main():
     st.sidebar.header("📺 Display Settings")
     gate_name = st.sidebar.text_input(
         "Gate Name", 
-        value=getattr(st.session_state, 'gate_name', "GATE"), 
+        value="GATE", 
         help="Name to display (e.g., GATE, TERMINAL, CHECKPOINT)",
         key='gate_name'
     )
     gate_number = st.sidebar.text_input(
         "Gate Number", 
-        value=getattr(st.session_state, 'gate_number', "02"), 
+        value="02", 
         help="Gate number to display",
         key='gate_number'
     )
@@ -1057,7 +1044,7 @@ def main():
     st.sidebar.subheader("👥 People Count Adjustment")
     enable_people_adjustment = st.sidebar.checkbox(
         "Enable people count adjustment", 
-        value=getattr(st.session_state, 'enable_people_adjustment', False), 
+        value=False, 
         help="Add/subtract people from detected count",
         key='enable_people_adjustment'
     )
@@ -1067,7 +1054,7 @@ def main():
             "Adjust detected count",
             min_value=-20,
             max_value=20,
-            value=getattr(st.session_state, 'people_adjustment', 0),
+            value=0,
             step=1,
             help="Add (+) or subtract (-) people from detected count before calculations",
             key='people_adjustment'
@@ -1085,13 +1072,11 @@ def main():
     # Theme Settings
     st.sidebar.subheader("🎨 Display Theme")
     theme_options = ["Dark (Airport Standard)", "Light (Bright Areas)", "High Contrast (Accessibility)"]
-    saved_theme = getattr(st.session_state, 'theme_option', "Dark (Airport Standard)")
-    theme_index = theme_options.index(saved_theme) if saved_theme in theme_options else 0
     
     theme_option = st.sidebar.selectbox(
         "Theme",
         theme_options,
-        index=theme_index,
+        index=0,
         help="Select display theme for different lighting conditions",
         key='theme_option'
     )
@@ -1099,32 +1084,83 @@ def main():
     # Font Settings
     st.sidebar.subheader("🔤 Font Settings")
     font_size_multiplier = st.sidebar.slider(
-        "Font Size",
+        "Font Size (Global)",
         min_value=0.5,
         max_value=2.0,
-        value=getattr(st.session_state, 'font_size_multiplier', 1.0),
+        value=1.0,
         step=0.1,
-        help="Adjust font size (1.0 = normal, 2.0 = double size)",
+        help="Global font size multiplier (1.0 = normal, 2.0 = double size)",
         key='font_size_multiplier'
     )
     
     font_weight_options = ["Normal", "Bold", "Extra Bold"]
-    saved_weight = getattr(st.session_state, 'font_weight', "Bold")
-    weight_index = font_weight_options.index(saved_weight) if saved_weight in font_weight_options else 1
     
     font_weight = st.sidebar.selectbox(
         "Font Weight",
         font_weight_options,
-        index=weight_index,
+        index=1,
         help="Text thickness",
         key='font_weight'
+    )
+    
+    # Individual Font Size Settings
+    st.sidebar.subheader("📏 Individual Font Sizes")
+    
+    gate_name_size = st.sidebar.slider(
+        "Gate Name Size",
+        min_value=0.5,
+        max_value=3.0,
+        value=1.0,
+        step=0.1,
+        help="Font size for gate name (e.g., GATE 02)",
+        key='gate_name_size'
+    )
+    
+    people_label_size = st.sidebar.slider(
+        "People Label Size",
+        min_value=0.5,
+        max_value=3.0,
+        value=1.0,
+        step=0.1,
+        help="Font size for 'PEOPLE IN QUEUE' label",
+        key='people_label_size'
+    )
+    
+    people_count_size = st.sidebar.slider(
+        "People Count Size",
+        min_value=0.5,
+        max_value=3.0,
+        value=1.0,
+        step=0.1,
+        help="Font size for people count number",
+        key='people_count_size'
+    )
+    
+    wait_time_label_size = st.sidebar.slider(
+        "Wait Time Label Size",
+        min_value=0.5,
+        max_value=3.0,
+        value=1.0,
+        step=0.1,
+        help="Font size for 'WAIT TIME (IN MINUTES)' label",
+        key='wait_time_label_size'
+    )
+    
+    wait_time_value_size = st.sidebar.slider(
+        "Wait Time Value Size",
+        min_value=0.5,
+        max_value=3.0,
+        value=1.0,
+        step=0.1,
+        help="Font size for wait time number",
+        key='wait_time_value_size'
     )
     
     # Color Settings
     st.sidebar.subheader("🌈 Color Settings")
     accent_color = st.sidebar.color_picker(
         "Accent Color",
-        value=getattr(st.session_state, 'accent_color', "#1f77b4"),
+        value="#1f77b4",
         help="Color for gate name and highlights",
         key='accent_color'
     )
@@ -1135,80 +1171,72 @@ def main():
     # People in Queue Text Settings
     st.sidebar.markdown("**People in Queue Label:**")
     font_options = ["Arial", "Helvetica", "Times New Roman", "Courier", "Verdana", "Georgia"]
-    saved_people_label_font = getattr(st.session_state, 'people_label_font', "Arial")
-    people_label_font_index = font_options.index(saved_people_label_font) if saved_people_label_font in font_options else 0
     
     people_label_font = st.sidebar.selectbox(
         "Font Family",
         font_options,
-        index=people_label_font_index,
+        index=0,
         key="people_label_font",
         help="Font for 'PEOPLE IN QUEUE' text"
     )
     
     people_label_color = st.sidebar.color_picker(
         "Text Color",
-        value=getattr(st.session_state, 'people_label_color', "#ffffff"),
+        value="#ffffff",
         key="people_label_color",
         help="Color for 'PEOPLE IN QUEUE' text"
     )
     
     # People Count Value Settings
     st.sidebar.markdown("**People Count Number:**")
-    saved_people_count_font = getattr(st.session_state, 'people_count_font', "Arial")
-    people_count_font_index = font_options.index(saved_people_count_font) if saved_people_count_font in font_options else 0
     
     people_count_font = st.sidebar.selectbox(
         "Font Family",
         font_options,
-        index=people_count_font_index,
+        index=0,
         key="people_count_font",
         help="Font for people count number"
     )
     
     people_count_color = st.sidebar.color_picker(
         "Number Color",
-        value=getattr(st.session_state, 'people_count_color', "#1f77b4"),
+        value="#1f77b4",
         key="people_count_color",
         help="Color for people count number"
     )
     
     # Wait Time Text Settings
     st.sidebar.markdown("**Wait Time Label:**")
-    saved_wait_time_label_font = getattr(st.session_state, 'wait_time_label_font', "Arial")
-    wait_time_label_font_index = font_options.index(saved_wait_time_label_font) if saved_wait_time_label_font in font_options else 0
     
     wait_time_label_font = st.sidebar.selectbox(
         "Font Family",
         font_options,
-        index=wait_time_label_font_index,
+        index=0,
         key="wait_time_label_font",
         help="Font for 'WAIT TIME (in minutes)' text"
     )
     
     wait_time_label_color = st.sidebar.color_picker(
         "Text Color",
-        value=getattr(st.session_state, 'wait_time_label_color', "#ffffff"),
+        value="#ffffff",
         key="wait_time_label_color",
         help="Color for 'WAIT TIME (in minutes)' text"
     )
     
     # Wait Time Value Settings
     st.sidebar.markdown("**Wait Time Number:**")
-    saved_wait_time_value_font = getattr(st.session_state, 'wait_time_value_font', "Arial")
-    wait_time_value_font_index = font_options.index(saved_wait_time_value_font) if saved_wait_time_value_font in font_options else 0
     
     wait_time_value_font = st.sidebar.selectbox(
         "Font Family",
         font_options,
-        index=wait_time_value_font_index,
+        index=0,
         key="wait_time_value_font",
         help="Font for wait time number"
     )
     
     wait_time_value_color = st.sidebar.color_picker(
         "Number Color",
-        value=getattr(st.session_state, 'wait_time_value_color', "#dc3545"),
+        value="#dc3545",
         key="wait_time_value_color",
         help="Color for wait time number"
     )
@@ -1219,7 +1247,7 @@ def main():
         "Screen Brightness",
         min_value=0.3,
         max_value=1.0,
-        value=getattr(st.session_state, 'brightness_level', 1.0),
+        value=1.0,
         step=0.1,
         help="Adjust overall display brightness",
         key='brightness_level'
@@ -1229,7 +1257,7 @@ def main():
         "Contrast Level",
         min_value=0.5,
         max_value=2.0,
-        value=getattr(st.session_state, 'contrast_level', 1.0),
+        value=1.0,
         step=0.1,
         help="Adjust contrast for better visibility",
         key='contrast_level'
@@ -1239,7 +1267,7 @@ def main():
     st.sidebar.header("✂️ Video Cropping")
     enable_cropping = st.sidebar.checkbox(
         "Enable live video cropping", 
-        value=getattr(st.session_state, 'enable_cropping', False), 
+        value=False, 
         help="Crop video feed to focus on specific queue area",
         key='enable_cropping'
     )
@@ -1463,7 +1491,12 @@ def main():
                                 wait_time_label_font=wait_time_label_font,
                                 wait_time_label_color=wait_time_label_color,
                                 wait_time_value_font=wait_time_value_font,
-                                wait_time_value_color=wait_time_value_color
+                                wait_time_value_color=wait_time_value_color,
+                                gate_name_size=gate_name_size,
+                                people_label_size=people_label_size,
+                                people_count_size=people_count_size,
+                                wait_time_label_size=wait_time_label_size,
+                                wait_time_value_size=wait_time_value_size
                             )
                             
                             # Add to history
