@@ -12,22 +12,28 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Force dark theme
-st._config.set_option("theme.base", "dark")
-st._config.set_option("theme.backgroundColor", "#0e1117")
-st._config.set_option("theme.secondaryBackgroundColor", "#262730")
-st._config.set_option("theme.textColor", "#fafafa")
+    # Force light theme for server compatibility
+    try:
+        st._config.set_option("theme.base", "light")
+        st._config.set_option("theme.backgroundColor", "#ffffff")
+        st._config.set_option("theme.secondaryBackgroundColor", "#f0f0f0")
+        st._config.set_option("theme.textColor", "#000000")
+    except:
+        # Fallback if config fails on server
+        pass
 
 # Custom CSS for huge text and TV-friendly display
 st.markdown("""
 <style>
-    /* Force dark background */
+    /* Force server-safe background */
     .stApp {
-        background-color: #0e1117 !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
     }
     
     .main {
-        background-color: #0e1117 !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
     }
     
     /* Hide ALL Streamlit UI elements */
@@ -50,7 +56,8 @@ st.markdown("""
         padding-top: 2rem;
         padding-bottom: 2rem;
         max-width: 100%;
-        background-color: #0e1117 !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
     }
     
     /* Huge text styles */
@@ -60,7 +67,7 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
-        color: #ffffff !important;
+        color: #000000 !important;
     }
     
     .huge-text {
@@ -69,7 +76,7 @@ st.markdown("""
         text-align: center !important;
         margin: 0 !important;
         line-height: 1 !important;
-        color: #ffffff !important;
+        color: #000000 !important;
     }
     
     .medium-text {
@@ -77,7 +84,7 @@ st.markdown("""
         font-weight: bold !important;
         text-align: center !important;
         margin: 1rem 0 !important;
-        color: #ffffff !important;
+        color: #000000 !important;
     }
     
     .gate-text {
@@ -85,7 +92,7 @@ st.markdown("""
         font-weight: bold !important;
         text-align: center !important;
         margin: 0 !important;
-        color: #1f77b4 !important;
+        color: #000000 !important;
     }
     
     .status-text {
