@@ -12,15 +12,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-    # Force light theme for server compatibility
-    try:
-        st._config.set_option("theme.base", "light")
-        st._config.set_option("theme.backgroundColor", "#ffffff")
-        st._config.set_option("theme.secondaryBackgroundColor", "#f0f0f0")
-        st._config.set_option("theme.textColor", "#000000")
-    except:
-        # Fallback if config fails on server
-        pass
+# Force light theme for server compatibility
+try:
+    st._config.set_option("theme.base", "light")
+    st._config.set_option("theme.backgroundColor", "#ffffff")
+    st._config.set_option("theme.secondaryBackgroundColor", "#f0f0f0")
+    st._config.set_option("theme.textColor", "#000000")
+except:
+    # Fallback if config fails on server
+    pass
 
 # Custom CSS for huge text and TV-friendly display
 st.markdown("""
